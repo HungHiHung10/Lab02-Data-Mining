@@ -2,17 +2,17 @@ module FPGrowthAlgo
 
 using ..Structures
 
-export fpgrowth, build_fptree, mine_tree
+export fpgrowth
 
 """
     fpgrowth(transactions::Vector{Vector{T}}, min_support::Int) where T
 
-Thực thi thuật toán FP-Growth, trả về dict gồm itemset => support.
+Thực thi thuật toán FP-Growth (tối ưu bộ nhớ), trả về dict gồm itemset => support.
 """
 function fpgrowth(transactions::Vector{Vector{T}}, min_support::Int) where T
     frequent_itemsets = Dict{Vector{T}, Int}()
     
-    # Lọc và đếm các item
+    # Bước 1: Đếm tần suất mỗi item
     item_counts = Dict{T, Int}()
     for t in transactions
         for item in t
@@ -20,7 +20,7 @@ function fpgrowth(transactions::Vector{Vector{T}}, min_support::Int) where T
         end
     end
     
-    # Loại bỏ các item không thỏa mãn min_support
+    # Bước 2: Lọc các item thỏa mãn min_support
     freq_items = Dict{T, Int}()
     for (item, count) in item_counts
         if count >= min_support
@@ -32,101 +32,92 @@ function fpgrowth(transactions::Vector{Vector{T}}, min_support::Int) where T
         return frequent_itemsets
     end
     
-    # Xây dựng Header Table
-    header_table = HeaderTable{T}()
+    # Bước 3: Xây dựng Header Table
+    header_table = Structures.HeaderTable{T}()
     for (item, count) in freq_items
         header_table[item] = Structures.HeaderTableEntry{T}(count)
     end
     
-    # Sắp xếp các item trong transaction theo tần suất giảm dần
-    sorted_transactions = Vector{Vector{T}}()
+    # Bước 4: Sắp xếp, lọc và chèn vào FP-Tree (gộp 2 bước)
+    root = Structures.FPNode{T}(zero(T), 0, nothing)
     for t in transactions
-        filtered_t = [item for item in t if haskey(freq_items, item)]
+        # Lọc + sắp xếp trong 1 bước
+        filtered_t = T[]
+        for item in t
+            if haskey(freq_items, item)
+                push!(filtered_t, item)
+            end
+        end
         if !isempty(filtered_t)
             sort!(filtered_t, by = x -> (-freq_items[x], x))
-            push!(sorted_transactions, filtered_t)
+            # Chèn trực tiếp vào cây (không lưu sorted_transactions)
+            _insert_tree!(root, header_table, filtered_t, 1)
         end
     end
     
-    # Xây dựng FP-Tree
-    root = Structures.FPNode{T}(zero(T), 1, nothing) # item root không quan trọng, ta dùng zero(T) hoặc giá trị mặc định. Trong thuật toán, item root không dùng đến.
-    # Để an toàn với mọi T, ta sẽ wrap gốc lại, nhưng để đơn giản ta gán một giá trị null hoặc bất kỳ. 
-    # Nhưng vì struct yêu cầu kiểu T, ta sẽ thay đổi logic một chút nếu T không có hàm zero. 
-    # Tuy nhiên, ta thường dùng T=Int. Giả sử T có zero(T).
-    
-    build_fptree!(root, header_table, sorted_transactions, ones(Int, length(sorted_transactions)))
-    
-    mine_tree!(header_table, min_support, T[], frequent_itemsets)
+    # Bước 5: Đào (Mine) cây — dùng buffer tái sử dụng
+    prefix = T[]
+    path_buf = T[]  # buffer tái sử dụng xuyên suốt đệ quy
+    _mine_tree!(header_table, min_support, prefix, frequent_itemsets, path_buf)
     
     return frequent_itemsets
 end
 
-function build_fptree!(root::Structures.FPNode{T}, header_table::Structures.HeaderTable{T}, transactions::Vector{Vector{T}}, counts::Vector{Int}) where T
-    for (i, t) in enumerate(transactions)
-        current_node = root
-        count = counts[i]
-        
-        for item in t
-            if haskey(current_node.children, item)
-                current_node.children[item].count += count
+"""
+Chèn 1 transaction vào FP-Tree. Inline để tránh overhead gọi hàm.
+"""
+@inline function _insert_tree!(current::Structures.FPNode{T}, header_table::Structures.HeaderTable{T}, items::Vector{T}, count::Int) where T
+    for item in items
+        child = Structures.find_child(current, item)
+        if child !== nothing
+            child.count += count
+        else
+            new_node = Structures.FPNode{T}(item, count, current)
+            push!(current.children, new_node)
+            # Cập nhật linked-list trong header_table
+            entry = header_table[item]
+            if entry.head === nothing
+                entry.head = new_node
+                entry.tail = new_node
             else
-                new_node = Structures.FPNode{T}(item, count, current_node)
-                current_node.children[item] = new_node
-                
-                # Cập nhật node_link
-                if header_table[item].head === nothing
-                    header_table[item].head = new_node
-                    header_table[item].tail = new_node
-                else
-                    header_table[item].tail.node_link = new_node
-                    header_table[item].tail = new_node
-                end
+                entry.tail.node_link = new_node
+                entry.tail = new_node
             end
-            current_node = current_node.children[item]
+            child = new_node
         end
+        current = child
     end
 end
 
-function mine_tree!(header_table::Structures.HeaderTable{T}, min_support::Int, prefix::Vector{T}, frequent_itemsets::Dict{Vector{T}, Int}) where T
-    # Sắp xếp các item trong header_table theo support tăng dần
+"""
+Đào (Mine) FP-Tree đệ quy — tối ưu bộ nhớ tối đa.
+- Push/pop backtracking cho prefix
+- 2-pass trên node_link: pass 1 đếm, pass 2 chèn trực tiếp vào conditional tree
+- Tái sử dụng path_buf xuyên suốt toàn bộ đệ quy (0 allocation cho path)
+"""
+function _mine_tree!(header_table::Structures.HeaderTable{T}, min_support::Int, prefix::Vector{T}, frequent_itemsets::Dict{Vector{T}, Int}, path_buf::Vector{T}) where T
+    # Sắp xếp item theo support tăng dần (chuẩn FP-Growth)
     sorted_items = sort(collect(keys(header_table)), by = x -> (header_table[x].count, x))
     
     for item in sorted_items
-        new_prefix = copy(prefix)
-        push!(new_prefix, item)
+        # Backtracking: push trước, pop sau
+        push!(prefix, item)
+        frequent_itemsets[copy(prefix)] = header_table[item].count
         
-        support = header_table[item].count
-        frequent_itemsets[new_prefix] = support
-        
-        # Xây dựng conditional pattern base
-        cond_pattern_base = Vector{Vector{T}}()
-        cond_counts = Vector{Int}()
-        
+        # === PASS 1: Đếm conditional item frequencies (không tạo vector tạm) ===
+        cond_item_counts = Dict{T, Int}()
         node = header_table[item].head
         while node !== nothing
-            path = Vector{T}()
+            cnt = node.count
             parent = node.parent
-            while parent !== nothing && parent.parent !== nothing # không lấy root
-                push!(path, parent.item)
+            while parent !== nothing && parent.parent !== nothing
+                cond_item_counts[parent.item] = get(cond_item_counts, parent.item, 0) + cnt
                 parent = parent.parent
-            end
-            if !isempty(path)
-                reverse!(path)
-                push!(cond_pattern_base, path)
-                push!(cond_counts, node.count)
             end
             node = node.node_link
         end
         
-        # Xây dựng conditional FP-Tree
-        cond_item_counts = Dict{T, Int}()
-        for (i, path) in enumerate(cond_pattern_base)
-            count = cond_counts[i]
-            for it in path
-                cond_item_counts[it] = get(cond_item_counts, it, 0) + count
-            end
-        end
-        
+        # Xây dựng conditional header table
         cond_header_table = Structures.HeaderTable{T}()
         for (it, c) in cond_item_counts
             if c >= min_support
@@ -135,22 +126,38 @@ function mine_tree!(header_table::Structures.HeaderTable{T}, min_support::Int, p
         end
         
         if !isempty(cond_header_table)
-            cond_root = Structures.FPNode{T}(item, 1, nothing) # item dummy root
-            cond_transactions = Vector{Vector{T}}()
-            cond_tx_counts = Vector{Int}()
+            cond_root = Structures.FPNode{T}(zero(T), 0, nothing)
             
-            for (i, path) in enumerate(cond_pattern_base)
-                filtered_path = [it for it in path if haskey(cond_header_table, it)]
-                if !isempty(filtered_path)
-                    sort!(filtered_path, by = x -> (-cond_header_table[x].count, x))
-                    push!(cond_transactions, filtered_path)
-                    push!(cond_tx_counts, cond_counts[i])
+            # === PASS 2: Xây dựng conditional FP-tree trực tiếp ===
+            # Không tạo paths, cond_transactions, cond_tx_counts — tiết kiệm hàng triệu Vector
+            node = header_table[item].head
+            while node !== nothing
+                # Thu thập path vào buffer tái sử dụng
+                empty!(path_buf)
+                parent = node.parent
+                while parent !== nothing && parent.parent !== nothing
+                    if haskey(cond_header_table, parent.item)
+                        push!(path_buf, parent.item)
+                    end
+                    parent = parent.parent
                 end
+                
+                if !isempty(path_buf)
+                    reverse!(path_buf)
+                    sort!(path_buf, by = x -> (-cond_header_table[x].count, x))
+                    # Chèn trực tiếp vào conditional tree (không lưu trung gian)
+                    _insert_tree!(cond_root, cond_header_table, path_buf, node.count)
+                end
+                
+                node = node.node_link
             end
             
-            build_fptree!(cond_root, cond_header_table, cond_transactions, cond_tx_counts)
-            mine_tree!(cond_header_table, min_support, new_prefix, frequent_itemsets)
+            # Đệ quy mine conditional tree
+            _mine_tree!(cond_header_table, min_support, prefix, frequent_itemsets, path_buf)
         end
+        
+        # Backtracking: pop
+        pop!(prefix)
     end
 end
 
