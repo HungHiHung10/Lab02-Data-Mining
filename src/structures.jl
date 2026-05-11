@@ -12,11 +12,11 @@ mutable struct FPNode{T}
     item::T
     count::Int
     parent::Union{FPNode{T}, Nothing}
-    children::Vector{FPNode{T}}         # Vector thay Dict → tiết kiệm ~300 bytes/node
+    children::Union{Vector{FPNode{T}}, Nothing}         # Khởi tạo lazy để tiết kiệm vector
     node_link::Union{FPNode{T}, Nothing}
 
     function FPNode{T}(item::T, count::Int, parent::Union{FPNode{T}, Nothing}) where T
-        new{T}(item, count, parent, FPNode{T}[], nothing)
+        new{T}(item, count, parent, nothing, nothing)
     end
 end
 
@@ -27,6 +27,7 @@ Tìm child node có item tương ứng. Trả về nothing nếu không tìm th�
 Scan tuần tự trên Vector — nhanh khi branching factor nhỏ.
 """
 @inline function find_child(node::FPNode{T}, item::T)::Union{FPNode{T}, Nothing} where T
+    if node.children === nothing return nothing end
     @inbounds for child in node.children
         if child.item == item
             return child

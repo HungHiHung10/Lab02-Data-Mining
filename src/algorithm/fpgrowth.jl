@@ -58,7 +58,9 @@ function fpgrowth(transactions::Vector{Vector{T}}, min_support::Int) where T
     # Bước 5: Đào (Mine) cây — dùng buffer tái sử dụng
     prefix = T[]
     path_buf = T[]  # buffer tái sử dụng xuyên suốt đệ quy
-    _mine_tree!(header_table, min_support, prefix, frequent_itemsets, path_buf)
+    item_counts_stack = Dict{T, Int}[]
+    header_table_stack = Structures.HeaderTable{T}[]
+    _mine_tree!(header_table, min_support, prefix, frequent_itemsets, path_buf, 1, item_counts_stack, header_table_stack)
     
     return frequent_itemsets
 end
@@ -73,6 +75,9 @@ Chèn 1 transaction vào FP-Tree. Inline để tránh overhead gọi hàm.
             child.count += count
         else
             new_node = Structures.FPNode{T}(item, count, current)
+            if current.children === nothing
+                current.children = Structures.FPNode{T}[]
+            end
             push!(current.children, new_node)
             # Cập nhật linked-list trong header_table
             entry = header_table[item]
@@ -95,7 +100,7 @@ end
 - 2-pass trên node_link: pass 1 đếm, pass 2 chèn trực tiếp vào conditional tree
 - Tái sử dụng path_buf xuyên suốt toàn bộ đệ quy (0 allocation cho path)
 """
-function _mine_tree!(header_table::Structures.HeaderTable{T}, min_support::Int, prefix::Vector{T}, frequent_itemsets::Dict{Vector{T}, Int}, path_buf::Vector{T}) where T
+function _mine_tree!(header_table::Structures.HeaderTable{T}, min_support::Int, prefix::Vector{T}, frequent_itemsets::Dict{Vector{T}, Int}, path_buf::Vector{T}, depth::Int, item_counts_stack::Vector{Dict{T, Int}}, header_table_stack::Vector{Structures.HeaderTable{T}}) where T
     # Sắp xếp item theo support tăng dần (chuẩn FP-Growth)
     sorted_items = sort(collect(keys(header_table)), by = x -> (header_table[x].count, x))
     
@@ -105,7 +110,13 @@ function _mine_tree!(header_table::Structures.HeaderTable{T}, min_support::Int, 
         frequent_itemsets[copy(prefix)] = header_table[item].count
         
         # === PASS 1: Đếm conditional item frequencies (không tạo vector tạm) ===
-        cond_item_counts = Dict{T, Int}()
+        if depth > length(item_counts_stack)
+            push!(item_counts_stack, Dict{T, Int}())
+            push!(header_table_stack, Structures.HeaderTable{T}())
+        end
+        cond_item_counts = item_counts_stack[depth]
+        empty!(cond_item_counts)
+
         node = header_table[item].head
         while node !== nothing
             cnt = node.count
@@ -118,7 +129,8 @@ function _mine_tree!(header_table::Structures.HeaderTable{T}, min_support::Int, 
         end
         
         # Xây dựng conditional header table
-        cond_header_table = Structures.HeaderTable{T}()
+        cond_header_table = header_table_stack[depth]
+        empty!(cond_header_table)
         for (it, c) in cond_item_counts
             if c >= min_support
                 cond_header_table[it] = Structures.HeaderTableEntry{T}(c)
@@ -153,7 +165,7 @@ function _mine_tree!(header_table::Structures.HeaderTable{T}, min_support::Int, 
             end
             
             # Đệ quy mine conditional tree
-            _mine_tree!(cond_header_table, min_support, prefix, frequent_itemsets, path_buf)
+            _mine_tree!(cond_header_table, min_support, prefix, frequent_itemsets, path_buf, depth + 1, item_counts_stack, header_table_stack)
         end
         
         # Backtracking: pop
