@@ -86,7 +86,7 @@ function eval_performance(config, logger)
     info(logger, "Transactions: ", total_txs)
     
     N_RUNS = get(config, "n_executes", 5)
-    results_df = DataFrame(MinSup=Float64[], JuliaTime=Float64[], JuliaMemMB=Float64[], SPMFTime=Float64[], SPMFMemMB=Float64[])
+    results_df = DataFrame(MinSup=Float64[], JuliaTime=Float64[], JuliaMemory=Float64[], SPMFTime=Float64[], SPMFMemory=Float64[])
 
     @showprogress "Benchmarking... " for min_sup_ratio in config["min_sups"]
         process(logger, "Executing with min_sup = ", min_sup_ratio * 100, "% in ", N_RUNS, " times...")
@@ -129,9 +129,9 @@ function vis_performance(df::DataFrame, logger)
                   title="Execution time", xlabel="MinSup (%)", ylabel="Second (s)", legend=:topright)
     plot!(p_time, x_vals, df_sorted.SPMFTime, label="SPMF", marker=:square, linewidth=2, color=:green)
     
-    p_memory = plot(x_vals, df_sorted.JuliaMemMB, label="Julia", marker=:circle, linewidth=2, color=:blue,
+    p_memory = plot(x_vals, df_sorted.JuliaMemory, label="Julia", marker=:circle, linewidth=2, color=:blue,
                  title="Memory consumption", xlabel="MinSup (%)", ylabel="Megabytes (MB)", legend=:topright)
-    plot!(p_memory, x_vals, df_sorted.SPMFMemMB, label="SPMF", marker=:square, linewidth=2, color=:green)
+    plot!(p_memory, x_vals, df_sorted.SPMFMemory, label="SPMF", marker=:square, linewidth=2, color=:green)
     
     display(plot(p_time, p_memory, layout=(1,2), size=(900, 400), bottom_margin=8mm, left_margin=5mm))
 end
