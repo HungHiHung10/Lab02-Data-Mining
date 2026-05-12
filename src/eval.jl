@@ -1,0 +1,201 @@
+"""
+Các hàm đánh giá (Evaluation) cho FPGrowth.
+Bao gồm: eval_correctness, vis_correctness, eval_performance, vis_performance,
+          eval_scalability, vis_scalability.
+
+Các hàm này phụ thuộc vào:
+  - FPGrowth module (cần include trước)
+  - Utils module (cần include trước)
+  - Logger (cần include logger.jl trước)
+  - CSV, DataFrames, Plots, Plots.PlotMeasures, ProgressMeter, Statistics
+"""
+
+using CSV
+using DataFrames
+using Plots
+using Plots.PlotMeasures
+using ProgressMeter
+using Statistics
+
+# ========================
+# CORRECTNESS
+# ========================
+function eval_correctness(config, logger)
+    phase(logger, "CORRECTNESS")
+    info(logger, "Kiểm chứng độ chính xác ở ngưỡng MinSup=", config["fixed_minsup_for_scalability"] * 100, "%")
+    
+    transactions = FPGrowth.read_spmf(config["dataset"])
+    total_txs = length(transactions)
+    min_sup_abs = ceil(Int, config["fixed_minsup_for_scalability"] * total_txs)
+    
+    # 1. Chạy Julia
+    process(logger, "Đang thực thi Julia FPGrowth...")
+    julia_result = FPGrowth.fpgrowth(transactions, min_sup_abs)
+    FPGrowth.write_spmf(config["output_julia"], julia_result)
+    
+    # 2. Chạy SPMF
+    process(logger, "Đang thực thi SPMF Built-in...")
+    Utils.execute_spmf(config, config["dataset"], config["output_spmf"], config["fixed_minsup_for_scalability"])
+    
+    # 3. So khớp
+    info(logger, "Thực hiện so khớp kết quả...")
+    my_res = Utils.parse_output(config["output_julia"])
+    spmf_res = Utils.parse_output(config["output_spmf"])
+    
+    missing_in_mine = length(setdiff(spmf_res, my_res))
+    missing_in_spmf = length(setdiff(my_res, spmf_res))
+    
+    return Dict(
+        "Julia_Count" => length(my_res),
+        "SPMF_Count" => length(spmf_res),
+        "Missing_in_Julia" => missing_in_mine,
+        "Missing_in_SPMF" => missing_in_spmf
+    )
+end
+
+function vis_correctness(res::Dict, logger)
+    phase(logger, "Visualize")
+    if res["Missing_in_Julia"] == 0 && res["Missing_in_SPMF"] == 0
+        success(logger, "chính xác 100% (", res["Julia_Count"], " frequent itemsets)")
+    else
+        fail(logger, "không chính xác: Lệch Julia: ", res["Missing_in_Julia"], " | Lệch SPMF: ", res["Missing_in_SPMF"])
+    end
+    
+    # Vẽ biểu đồ Cột
+    categories = ["Julia From Scratch", "SPMF Built-in"]
+    counts = [res["Julia_Count"], res["SPMF_Count"]]
+    
+    p = bar(categories, counts, 
+            title="Correctness evaluation",
+            ylabel="Itemsets", 
+            legend=false, 
+            color=[:blue, :green], 
+            bar_width=0.4)
+    display(plot(p, bottom_margin=5mm))
+end
+
+# ========================
+# PERFORMANCE
+# ========================
+function eval_performance(config, logger)
+    process(logger, "Đang Warmup JIT Compiler...")
+    FPGrowth.fpgrowth([[1,2], [1,3], [1,2,3]], 1)
+    phase(logger, "PERFORMANCE")
+    transactions = FPGrowth.read_spmf(config["dataset"])
+    total_txs = length(transactions)
+    info(logger, "Tổng số giao dịch: ", total_txs)
+    
+    N_RUNS = get(config, "n_benchmark_runs", 5) # Số lần chạy để lấy median
+    results_df = DataFrame(MinSup=Float64[], JuliaTime=Float64[], JuliaMemMB=Float64[], SPMFTime=Float64[], SPMFMemMB=Float64[])
+
+    @showprogress "Đang đo hiệu năng... " for min_sup_ratio in config["min_sups"]
+        process(logger, "Đang thực thi với min_sup = ", min_sup_ratio * 100, "% (", N_RUNS, " lần)...")
+        min_sup_abs = ceil(Int, min_sup_ratio * total_txs)
+        
+        # === Julia: Chạy N lần, lấy median để loại bỏ nhiễu ===
+        julia_times = Float64[]
+        julia_mems  = Float64[]
+        for _ in 1:N_RUNS
+            GC.gc()   # Dọn rác TRƯỚC khi bắt đầu đo
+            mem_bytes = @allocated begin
+                t0 = time_ns()
+                FPGrowth.fpgrowth(transactions, min_sup_abs)
+                t1 = time_ns()
+            end
+            push!(julia_times, (t1 - t0) / 1e9)
+            push!(julia_mems,  mem_bytes / (1024^2))
+        end
+        julia_time   = median(julia_times)
+        julia_mem_mb = median(julia_mems)
+        
+        # SPMF (chỉ cần 1 lần vì Java tự quản lý GC tốt hơn)
+        spmf_time, spmf_mem_mb = Utils.execute_spmf(config, config["dataset"], config["output_spmf"], min_sup_ratio)
+        
+        metric(logger, "Julia → Time: ", round(julia_time, digits=3), "s | RAM: ", round(julia_mem_mb, digits=2), " MB  (median of ", N_RUNS, " runs)")
+        metric(logger, "SPMF  → Time: ", round(spmf_time, digits=3), "s | RAM: ", round(spmf_mem_mb, digits=2), " MB")
+        
+        push!(results_df, (min_sup_ratio, julia_time, julia_mem_mb, spmf_time, spmf_mem_mb))
+    end
+    
+    CSV.write(config["csv_minsup"], results_df)
+    success(logger, "Saved at ", config["csv_minsup"])
+    return results_df
+end
+
+function vis_performance(df::DataFrame, logger)
+    phase(logger, "visualize")
+    df_sorted = sort(df, :MinSup, rev=true)
+    x_vals = df_sorted.MinSup .* 100
+    
+    p_time = plot(x_vals, df_sorted.JuliaTime, label="Julia", marker=:circle, linewidth=2, color=:blue,
+                  title="Execution time", xlabel="MinSup (%)", ylabel="Second (s)", legend=:topright)
+    plot!(p_time, x_vals, df_sorted.SPMFTime, label="SPMF", marker=:square, linewidth=2, color=:green)
+    
+    p_mem = plot(x_vals, df_sorted.JuliaMemMB, label="Julia", marker=:circle, linewidth=2, color=:blue,
+                 title="Memory consumption", xlabel="MinSup (%)", ylabel="Megabytes (MB)", legend=:topright)
+    plot!(p_mem, x_vals, df_sorted.SPMFMemMB, label="SPMF", marker=:square, linewidth=2, color=:green)
+    
+    display(plot(p_time, p_mem, layout=(1,2), size=(900, 400), bottom_margin=8mm, left_margin=5mm))
+end
+
+# ========================
+# SCALABILITY
+# ========================
+function eval_scalability(config, logger)
+    # JIT WARMUP (Tránh đo thời gian biên dịch của Julia vào kết quả)
+    process(logger, "Đang Warmup JIT Compiler...")
+    FPGrowth.fpgrowth([[1,2], [1,3], [1,2,3]], 1)
+    phase(logger, "SCALABILITY")
+    transactions = FPGrowth.read_spmf(config["dataset"])
+    total_txs = length(transactions)
+    fixed_minsup = config["fixed_minsup_for_scalability"]
+    info(logger, "Ngưỡng MinSup cố định=", fixed_minsup * 100, "%")
+    
+    results_df = DataFrame(DataRatio=Float64[], NumTransactions=Int[], JuliaTime=Float64[], SPMFTime=Float64[])
+    
+    @showprogress "Đang đo độ mở rộng... " for ratio in config["data_ratios"]
+        num_tx = ceil(Int, total_txs * ratio)
+        process(logger, "Data Ratio = ", ratio * 100, "% (", num_tx, " giao dịch) ...")
+        
+        sliced_txs = transactions[1:num_tx]
+        temp_data_path = "../results/temp_chess_$(ratio).dat"
+        open(temp_data_path, "w") do f
+            for tx in sliced_txs
+                println(f, join(tx, " "))
+            end
+        end
+        
+        min_sup_abs = ceil(Int, fixed_minsup * num_tx)
+        
+        # Julia
+        GC.gc() # Ép Julia dọn rác trước khi đo để kết quả ổn định
+        time_before = time_ns()
+        FPGrowth.fpgrowth(sliced_txs, min_sup_abs)
+        time_after = time_ns()
+        julia_time = (time_after - time_before) / 1e9
+        
+        # SPMF
+        spmf_time, _ = Utils.execute_spmf(config, temp_data_path, config["output_spmf"], fixed_minsup)
+        
+        metric(logger, "Julia Time: ", round(julia_time, digits=3), "s | SPMF Time: ", round(spmf_time, digits=3), "s")
+        push!(results_df, (ratio, num_tx, julia_time, spmf_time))
+        
+        rm(temp_data_path, force=true)
+    end
+    
+    CSV.write(config["csv_scalability"], results_df)
+    success(logger, "Saved at ", config["csv_scalability"])
+    return results_df
+end
+
+function vis_scalability(df::DataFrame, logger)
+    phase(logger, "visualize")
+    x_vals = df.DataRatio .* 100
+    
+    p_scale = plot(x_vals, df.JuliaTime, label="Julia", marker=:circle, linewidth=2, color=:blue,
+                   title="Scalability evaluation",
+                   xlabel="Data ratio (%)", ylabel="Execution time (s)", legend=:topleft)
+    plot!(p_scale, x_vals, df.SPMFTime, label="SPMF", marker=:square, linewidth=2, color=:green)
+    
+    display(plot(p_scale, bottom_margin=8mm, left_margin=5mm))
+end

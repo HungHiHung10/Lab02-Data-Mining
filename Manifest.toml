@@ -200,8 +200,8 @@ git-tree-sha1 = "cac41ca6b2d399adfc95e51240566f8a60a80806"
 uuid = "b22a6f82-2f65-5046-a5b2-351ab43fb4e5"
 version = "8.1.0+0"
 
-[[deps.FPGrowthProject]]
-deps = ["CSV", "DataFrames", "DataStructures", "Plots"]
+[[deps.FPGrowth]]
+deps = ["CSV", "DataFrames", "DataStructures", "Plots", "ProgressMeter"]
 path = "."
 uuid = "12345678-1234-1234-1234-123456789012"
 version = "0.1.0"

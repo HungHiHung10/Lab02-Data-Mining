@@ -1,6 +1,6 @@
 module Utils
 
-export read_spmf, write_spmf
+export read_spmf, write_spmf, parse_output, execute_spmf
 
 """
     read_spmf(filepath::String)
@@ -41,6 +41,44 @@ function write_spmf(filepath::String, frequent_itemsets::Dict{Vector{Int}, Int})
             println(file, "$itemset_str #SUP: $support")
         end
     end
+end
+
+function parse_output(file_path)
+    results = Set{String}()
+    for line in readlines(file_path)
+        line = strip(line)
+        if isempty(line) continue end
+        parts = split(line, "#SUP:")
+        if length(parts) == 2
+            items = sort([parse(Int, x) for x in split(strip(parts[1]))])
+            sup = strip(parts[2])
+            canonical_string = join(items, " ") * " - " * sup
+            push!(results, canonical_string)
+        end
+    end
+    return results
+end
+
+function execute_spmf(config, data_path, output_path, min_sup_ratio)
+    command = `$(config["java_path"]) -jar $(config["spmf_jar"]) run FPGrowth_itemsets $(data_path) $(output_path) $min_sup_ratio`
+    output_buffer = IOBuffer()
+    # SPMF in thống kê ra stdout
+    run(pipeline(command, stdout=output_buffer))
+    output = String(take!(output_buffer))
+    
+    time_ms = 0.0
+    memory_mb = 0.0
+    
+    for line in split(output, "\n")
+        if occursin("Total time", line)
+            m = match(r"~ (\d+) ms", line)
+            if m !== nothing time_ms = parse(Float64, m.captures[1]) / 1000.0 end
+        elseif occursin("Max memory usage", line)
+            m = match(r": ([\d\.]+) mb", line)
+            if m !== nothing memory_mb = parse(Float64, m.captures[1]) end
+        end
+    end
+    return time_ms, memory_mb
 end
 
 end

@@ -2,41 +2,41 @@
 Module chứa Logger hướng đối tượng (OOP) dùng cho Evaluation.
 """
 
-struct EvaluationLogger
+struct Logger
 end
 
-function log_info(l::EvaluationLogger, msg...)
+function info(l::Logger, msg...)
     printstyled("[info] ", color=:cyan, bold=true)
     println(msg...)
 end
 
-function log_warning(l::EvaluationLogger, msg...)
+function warning(l::Logger, msg...)
     printstyled("[warning] ", color=:yellow, bold=true)
     println(msg...)
 end
 
-function log_success(l::EvaluationLogger, msg...)
+function success(l::Logger, msg...)
     printstyled("[success] ", color=:green, bold=true)
     println(msg...)
 end
 
-function log_fail(l::EvaluationLogger, msg...)
+function fail(l::Logger, msg...)
     printstyled("[fail] ", color=:red, bold=true)
     println(msg...)
 end
 
-function log_process(l::EvaluationLogger, msg...)
+function process(l::Logger, msg...)
     printstyled("[process] ", color=:blue, bold=true)
     println(msg...)
 end
 
-function log_metric(l::EvaluationLogger, msg...)
+function metric(l::Logger, msg...)
     print("   ")
     printstyled("[metric] ", color=:magenta, bold=true)
     println(msg...)
 end
 
-function log_phase(l::EvaluationLogger, title)
+function phase(l::Logger, title)
     println("\n", "_"^50)
     printstyled("[phase] ", color=:white, bold=true)
     printstyled(" ", title, "\n", color=:white, bold=true)
