@@ -155,7 +155,6 @@ function _mine_tree!(header_table::Structures.HeaderTable{T}, min_support::Int, 
                 end
                 
                 if !isempty(path_buf)
-                    reverse!(path_buf)
                     sort!(path_buf, by = x -> (-cond_header_table[x].count, x))
                     # Chèn trực tiếp vào conditional tree (không lưu trung gian)
                     _insert_tree!(cond_root, cond_header_table, path_buf, node.count)
