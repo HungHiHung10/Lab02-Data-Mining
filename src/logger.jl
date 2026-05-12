@@ -1,5 +1,5 @@
 """
-Module chứa Logger hướng đối tượng (OOP) dùng cho Evaluation.
+Module chứa Logger
 """
 
 struct Logger
