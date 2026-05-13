@@ -86,7 +86,7 @@ function eval_performance(config, logger)
     info(logger, "Transactions: ", total_txs)
     
     N_RUNS = get(config, "n_executes", 5)
-    results_df = DataFrame(MinSup=Float64[], JuliaTime=Float64[], JuliaMemory=Float64[], SPMFTime=Float64[], SPMFMemory=Float64[])
+    results_df = DataFrame(MinSup=Float64[], Itemsets=Int[], JuliaTime=Float64[], JuliaMemory=Float64[], SPMFTime=Float64[], SPMFMemory=Float64[])
 
     @showprogress "Benchmarking... " for min_sup_ratio in config["min_sups"]
         process(logger, "Executing with min_sup = ", min_sup_ratio * 100, "% in ", N_RUNS, " times...")
@@ -94,13 +94,16 @@ function eval_performance(config, logger)
         
         julia_times = Float64[]
         julia_memories  = Float64[] 
+        itemset_count = 0
         for _ in 1:N_RUNS
             GC.gc() 
+            local frequent_itemsets
             mem_bytes = @allocated begin
                 t0 = time_ns()
-                FPGrowth.fpgrowth(transactions, min_sup_abs)
+                frequent_itemsets = FPGrowth.fpgrowth(transactions, min_sup_abs)
                 t1 = time_ns()
             end
+            itemset_count = length(frequent_itemsets)
             push!(julia_times, (t1 - t0) / 1e9)
             push!(julia_memories,  mem_bytes / (1024^2))
         end
@@ -109,10 +112,10 @@ function eval_performance(config, logger)
         
         spmf_time, spmf_memory = Utils.execute_spmf(config, config["dataset_path"], config["baseline_result"], min_sup_ratio)
         
-        metric(logger, "Julia From Scratch (Proposed)  → Time: ", round(julia_time, digits=3), "s | Memory: ", round(julia_memory, digits=2), " MB  (median of ", N_RUNS, " runs)")
+        metric(logger, "Julia From Scratch (Proposed)  → Time: ", round(julia_time, digits=3), "s | Memory: ", round(julia_memory, digits=2), " MB | Itemsets: ", itemset_count)
         metric(logger, "SPMF Built-in (Baseline)  → Time: ", round(spmf_time, digits=3), "s | Memory: ", round(spmf_memory, digits=2), " MB")
         
-        push!(results_df, (min_sup_ratio, julia_time, julia_memory, spmf_time, spmf_memory))
+        push!(results_df, (min_sup_ratio, itemset_count, julia_time, julia_memory, spmf_time, spmf_memory))
     end
     
     CSV.write(config["performance_result"], results_df)
@@ -195,4 +198,75 @@ function vis_scalability(df::DataFrame, logger)
     plot!(p_scale, x_vals, df.SPMFTime, label="SPMF", marker=:square, linewidth=2, color=:green)
     
     display(plot(p_scale, bottom_margin=8mm, left_margin=5mm))
+end
+
+# ========================
+# UNIT TESTS
+# ========================
+function run_unitTest(config, logger)
+    phase(logger, "UNIT TESTING")
+    test_files = config["datasets_path"]
+    min_sup = config["Minimum Support"]
+    results_dir = config["results_path"][1]
+    
+    info(logger, "Running tests on ", length(test_files), " toy datasets with MinSup=", min_sup*100, "%")
+    
+    passed = 0
+    total = length(test_files)
+    
+    # We use a local copy for SPMF execution if needed, but here we can just update paths
+    test_config = copy(config)
+    
+    for (i, file) in enumerate(test_files)
+        process(logger, "Test ", i, "/", total, ": ", basename(file))
+        
+        julia_out = joinpath(results_dir, "temp_julia_out.txt")
+        spmf_out = joinpath(results_dir, "temp_spmf_out.txt")
+        
+        test_config["proposed_result"] = julia_out
+        test_config["baseline_result"] = spmf_out
+        
+        try
+            transactions = FPGrowth.read_spmf(file)
+            total_txs = length(transactions)
+            min_sup_abs = ceil(Int, min_sup * total_txs)
+            
+            # Julia
+            julia_result = FPGrowth.fpgrowth(transactions, min_sup_abs)
+            FPGrowth.write_spmf(julia_out, julia_result)
+            
+            # SPMF
+            Utils.execute_spmf(test_config, file, spmf_out, min_sup)
+            
+            # Compare
+            julia_res = Utils.parse_output(julia_out)
+            spmf_res = Utils.parse_output(spmf_out)
+            
+            missing_in_julia = length(setdiff(spmf_res, julia_res))
+            missing_in_spmf = length(setdiff(julia_res, spmf_res))
+            
+            if missing_in_julia == 0 && missing_in_spmf == 0
+                success(logger, "✓ Test ", i, " Passed (", length(julia_res), " itemsets)")
+                passed += 1
+            else
+                fail(logger, "✗ Test ", i, " Failed! Missing in Julia: ", missing_in_julia, " | Missing in SPMF: ", missing_in_spmf)
+            end
+        catch e
+            fail(logger, "✗ Test ", i, " Error: ", e)
+        end
+        
+        # Cleanup
+        rm(julia_out, force=true)
+        rm(spmf_out, force=true)
+    end
+    
+    accuracy = (passed / total) * 100
+    phase(logger, "UNIT TEST RESULTS")
+    if passed == total
+        success(logger, "Accuracy Rate: ", round(accuracy, digits=2), "% (Passed ", passed, "/", total, ")")
+    else
+        fail(logger, "Accuracy Rate: ", round(accuracy, digits=2), "% (Passed ", passed, "/", total, ")")
+    end
+    
+    return accuracy
 end
