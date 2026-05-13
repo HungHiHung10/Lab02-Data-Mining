@@ -139,6 +139,26 @@ function vis_performance(df::DataFrame, logger)
     display(plot(p_time, p_memory, layout=(1,2), size=(900, 400), bottom_margin=8mm, left_margin=5mm))
 end
 
+function vis_minSupNFI(df::DataFrame, logger)
+    phase(logger, "visualize output size")
+    df_sorted = sort(df, :MinSup)
+    x_vals = df_sorted.MinSup .* 100
+    
+    # Sử dụng thang đo log cho trục Y vì số lượng tập phổ biến thường tăng bùng nổ (exponential)
+    p = plot(x_vals, df_sorted.Itemsets, 
+             label="Number of Itemsets", 
+             marker=:circle, 
+             linewidth=2, 
+             color=:orange,
+             title="Relationship between MinSup and Output Size", 
+             xlabel="MinSup (%)", 
+             ylabel="Frequent Itemsets (FI)", 
+             yscale=:log10,
+             legend=:topright)
+    
+    display(plot(p, size=(700, 450), bottom_margin=8mm, left_margin=8mm))
+end
+
 # ========================
 # SCALABILITY
 # ========================
