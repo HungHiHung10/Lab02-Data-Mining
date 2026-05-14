@@ -290,3 +290,66 @@ function run_unitTest(config, logger)
     
     return accuracy
 end
+
+# ========================
+# AVG TRANSACTION LENGTH
+# ========================
+function eval_tx_length(config, logger)
+    phase(logger, "TRANSACTION LENGTH")
+    
+    # Parameters
+    num_tx = get(config, "num_transactions", 5000)
+    universe_size = get(config, "universe_size", 500)
+    lengths = get(config, "avg_lengths", [10, 20, 30, 40, 50])
+    min_sup = get(config, "Minimum Support", 0.1)
+    
+    results_df = DataFrame(AvgLength=Float64[], JuliaTime=Float64[], JuliaMemory=Float64[], SPMFTime=Float64[], SPMFMemory=Float64[])
+    
+    @showprogress "Benchmarking Lengths... " for avg_len in lengths
+        process(logger, "Average Length = ", avg_len, " items ...")
+        
+        temp_data_path = "../results/temp_len_$(avg_len).dat"
+        Utils.generate_synthetic_data(num_tx, Float64(avg_len), universe_size, temp_data_path)
+        
+        transactions = Utils.read_spmf(temp_data_path)
+        min_sup_abs = ceil(Int, min_sup * num_tx)
+        
+        # Julia
+        GC.gc()
+        mem_bytes = @allocated begin
+            t0 = time_ns()
+            FPGrowth.fpgrowth(transactions, min_sup_abs)
+            t1 = time_ns()
+        end
+        julia_time = (t1 - t0) / 1e9
+        julia_mem = mem_bytes / (1024^2) # MB
+        
+        # SPMF
+        spmf_time, spmf_mem = Utils.execute_spmf(config, temp_data_path, config["baseline_result"], min_sup)
+        
+        metric(logger, "AvgLen: $avg_len | Julia: $(round(julia_time, digits=3))s, $(round(julia_mem, digits=2))MB | SPMF: $(round(spmf_time, digits=3))s, $(round(spmf_mem, digits=2))MB")
+        push!(results_df, (avg_len, julia_time, julia_mem, spmf_time, spmf_mem))
+        
+        rm(temp_data_path, force=true)
+    end
+    
+    return results_df
+end
+
+function vis_tx_length(df::DataFrame, logger)
+    phase(logger, "visualize")
+    
+    # Biểu đồ thời gian
+    p_time = plot(df.AvgLength, df.JuliaTime, label="Julia", marker=:circle, color=:blue,
+                  title="Execution Time vs Avg Length",
+                  xlabel="Average Length", ylabel="Time (s)", legend=:topleft)
+    plot!(p_time, df.AvgLength, df.SPMFTime, label="SPMF", marker=:square, color=:green)
+    
+    # Biểu đồ bộ nhớ
+    p_mem = plot(df.AvgLength, df.JuliaMemory, label="Julia", marker=:circle, color=:blue,
+                 title="Memory vs Avg Length",
+                 xlabel="Average Length", ylabel="Memory (MB)", legend=:topleft)
+    plot!(p_mem, df.AvgLength, df.SPMFMemory, label="SPMF", marker=:square, color=:green)
+    
+    display(plot(p_time, p_mem, layout=(1,2), size=(900, 400), bottom_margin=8mm, left_margin=5mm))
+end
