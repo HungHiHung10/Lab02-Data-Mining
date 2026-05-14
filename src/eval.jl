@@ -292,6 +292,98 @@ function run_unitTest(config, logger)
 end
 
 # ========================
+# OPTIMIZATION EVALUATION
+# ========================
+function eval_optimization(config, logger; min_sup=nothing)
+    phase(logger, "OPTIMIZATION COMPARISON")
+    
+    # Lấy đường dẫn file: ưu tiên dataset_path
+    path = haskey(config, "dataset_path") ? config["dataset_path"] : config["datasets_path"][1]
+    
+    # Lấy min_sup: ưu tiên tham số truyền vào, nếu không có thì lấy từ config
+    Min_Sup = (min_sup !== nothing) ? min_sup : config["Minimum Support"]
+    
+    transactions = FPGrowth.read_spmf(path)
+    total_txs = length(transactions)
+    min_sup_abs = ceil(Int, Min_Sup * total_txs)
+    
+    info(logger, "Comparing Basic vs Optimized version on: ", basename(path))
+    info(logger, "Threshold MinSup=", Min_Sup * 100, "%")
+    
+    # 1. Basic Version
+    process(logger, "Running Basic FPGrowth...")
+    GC.gc()
+    T = eltype(eltype(transactions)) # Xác định kiểu của item (ví dụ Int64)
+    res_basic = Dict{Vector{T}, Int}()
+    t_basic = @elapsed res_basic = FPGrowth.fpgrowth(transactions, min_sup_abs)
+    
+    # 2. Optimized Version
+    process(logger, "Running Optimized FPGrowth (Single Path Pruning + BitArray)...")
+    GC.gc()
+    res_opt = Dict{Vector{T}, Int}()
+    t_opt = @elapsed res_opt = FPGrowth.fpgrowth_opt(transactions, min_sup_abs)
+    
+    # === KIỂM TRA TÍNH ĐÚNG ĐẮN (CORRECTNESS CHECK) ===
+    is_correct = (res_basic == res_opt)
+    if is_correct
+        success(logger, "✓ Internal Consistency: Basic and Optimized versions match (", length(res_basic), " itemsets)")
+    else
+        fail(logger, "✗ Internal Discrepancy: Basic and Optimized results differ!")
+        info(logger, "Basic count: ", length(res_basic), " | Optimized count: ", length(res_opt))
+    end
+    
+    # === ĐỐI CHIẾU VỚI SPMF (NẾU CÓ CẤU HÌNH) ===
+    if haskey(config, "spmf_path") && isfile(config["spmf_path"])
+        process(logger, "Verifying results against SPMF Java baseline...")
+        spmf_out = joinpath("..", "results", "spmf_bench_temp.txt") # Đảm bảo đường dẫn đúng
+        Utils.execute_spmf(config, path, spmf_out, Min_Sup)
+        res_spmf = Utils.parse_output(spmf_out)
+        
+        # Chuyển đổi res_opt (Dict) sang Set{String} để so sánh với kết quả từ SPMF
+        res_opt_set = Set{String}()
+        for (itemset, sup) in res_opt
+            push!(res_opt_set, join(itemset, " ") * " - " * string(sup))
+        end
+        
+        if res_opt_set == res_spmf
+            success(logger, "✓ SPMF Verified: Julia results are identical to SPMF Java.")
+        else
+            fail(logger, "✗ SPMF Discrepancy! Julia results differ from SPMF Java.")
+            info(logger, "Julia count: ", length(res_opt), " | SPMF count: ", length(res_spmf))
+            
+            # Debug: In ra một vài phần tử khác biệt nếu cần
+            diff = setdiff(res_spmf, res_opt_set)
+            if !isempty(diff)
+                info(logger, "Sample missing in Julia: ", first(diff))
+            end
+        end
+    end
+    
+    improvement = ((t_basic - t_opt) / t_basic) * 100
+    metric(logger, "Basic Time: ", round(t_basic, digits=4), "s")
+    metric(logger, "Optimized Time: ", round(t_opt, digits=4), "s")
+    
+    if improvement > 0
+        success(logger, "Improvement: ", round(improvement, digits=2), "% faster")
+    else
+        info(logger, "No significant speedup observed for this dataset/minsup.")
+    end
+    
+    return DataFrame(Version=["Basic", "Optimized"], ExecutionTime=[t_basic, t_opt])
+end
+
+function vis_optimization(df::DataFrame, logger)
+    phase(logger, "visualize")
+    p = bar(df.Version, df.ExecutionTime, 
+            title="Basic vs Optimized FP-Growth",
+            ylabel="Execution Time (s)",
+            legend=false,
+            color=[:gray, :blue],
+            bar_width=0.5)
+    display(plot(p, bottom_margin=5mm))
+end
+
+# ========================
 # AVG TRANSACTION LENGTH
 # ========================
 function eval_tx_length(config, logger)

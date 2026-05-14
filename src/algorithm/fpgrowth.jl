@@ -107,7 +107,9 @@ function _mine_tree!(header_table::Structures.HeaderTable{T}, min_support::Int, 
     for item in sorted_items
         # Backtracking: push trước, pop sau
         push!(prefix, item)
-        frequent_itemsets[copy(prefix)] = header_table[item].count
+        itemset = copy(prefix)
+        sort!(itemset) # Đảm bảo thứ tự item luôn tăng dần (Chuẩn SPMF)
+        frequent_itemsets[itemset] = header_table[item].count
         
         # === PASS 1: Đếm conditional item frequencies (không tạo vector tạm) ===
         if depth > length(item_counts_stack)
