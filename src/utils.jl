@@ -1,5 +1,7 @@
 module Utils
 
+using Random
+
 export read_spmf, write_spmf, parse_output, execute_spmf, transform_spmf
 
 """
@@ -66,24 +68,30 @@ function execute_spmf(config, data_path, output_path, min_sup_ratio)
     actual_data_path = data_path
     is_temp = false
     
-    # Kiểm tra xem file có chứa dấu phẩy không (định dạng CSV)
+    # Kiểm tra xem file có chứa dấu phẩy hoặc tab không (định dạng CSV hoặc tab-separated)
     if isfile(data_path)
-        has_commas = false
+        needs_preprocessing = false
         open(data_path, "r") do f
             for line in eachline(f)
-                if occursin(",", line)
-                    has_commas = true
+                if occursin(",", line) || occursin("\t", line)
+                    needs_preprocessing = true
                 end
                 break # Chỉ kiểm tra dòng đầu
             end
         end
         
-        if has_commas
+        if needs_preprocessing
             actual_data_path = data_path * ".spmf_tmp"
             open(actual_data_path, "w") do out
                 open(data_path, "r") do in_f
                     for line in eachline(in_f)
-                        println(out, replace(line, "," => " "))
+                        # Thay thế dấu phẩy và tab bằng khoảng trắng
+                        clean_line = replace(line, "," => " ", "\t" => " ")
+                        # Loại bỏ khoảng trắng thừa và nối lại bằng dấu cách đơn
+                        items = split(strip(clean_line))
+                        if !isempty(items)
+                            println(out, join(items, " "))
+                        end
                     end
                 end
             end
@@ -213,6 +221,27 @@ function transform_spmf(zip_path, extract_dir, raw_data_name, spmf_out_path, log
 
     printstyled(stdout, "[success] ", color=:green, bold=true)
     println("Saved at: $spmf_out_path")
+end
+
+"""
+    generate_synthetic_data(num_tx::Int, avg_len::Float64, universe_size::Int, output_path::String)
+
+Tạo CSDL giao dịch tổng hợp với độ dài giao dịch trung bình và kích thước tập mục mục tiêu.
+Sử dụng để đánh giá ảnh hưởng của độ dài giao dịch đến hiệu năng thuật toán.
+"""
+function generate_synthetic_data(num_tx::Int, avg_len::Float64, universe_size::Int, output_path::String)
+    open(output_path, "w") do f
+        for _ in 1:num_tx
+            # Độ dài giao dịch biến thiên xung quanh avg_len
+            len = max(1, round(Int, avg_len + randn() * (avg_len * 0.2)))
+            # Giới hạn len không vượt quá universe_size
+            len = min(len, universe_size)
+            
+            # Chọn các item ngẫu nhiên và duy nhất
+            items = sort(Random.shuffle(1:universe_size)[1:len])
+            println(f, join(items, " "))
+        end
+    end
 end
 
 end
