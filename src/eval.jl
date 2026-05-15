@@ -20,7 +20,7 @@ using Statistics
 # ========================
 # CORRECTNESS
 # ========================
-function eval_correctness(config, logger)
+function eval_correctness(config, logger; algo=FPGrowth.fpgrowth)
     phase(logger, "CORRECTNESS")
     info(logger, "Verify accuracy at the threshold MinSup=", config["Minimum Support"] * 100, "%")
     
@@ -30,7 +30,7 @@ function eval_correctness(config, logger)
     
     # 1. Chạy Julia
     process(logger, "Executing Julia From Scratch (Proposed)...")
-    julia_result = FPGrowth.fpgrowth(transactions, min_sup_abs)
+    julia_result = algo(transactions, min_sup_abs)
     FPGrowth.write_spmf(config["proposed_result"], julia_result)
     
     # 2. Chạy SPMF
@@ -77,9 +77,9 @@ end
 # ========================
 # PERFORMANCE
 # ========================
-function eval_performance(config, logger)
+function eval_performance(config, logger; algo=FPGrowth.fpgrowth)
     process(logger, "Warming up JIT Compiler...")
-    FPGrowth.fpgrowth([[1,2], [1,3], [1,2,3]], 1)
+    algo([[1,2], [1,3], [1,2,3]], 1)
     phase(logger, "PERFORMANCE")
     transactions = FPGrowth.read_spmf(config["dataset_path"])
     total_txs = length(transactions)
@@ -100,7 +100,7 @@ function eval_performance(config, logger)
             local frequent_itemsets
             mem_bytes = @allocated begin
                 t0 = time_ns()
-                frequent_itemsets = FPGrowth.fpgrowth(transactions, min_sup_abs)
+                frequent_itemsets = algo(transactions, min_sup_abs)
                 t1 = time_ns()
             end
             itemset_count = length(frequent_itemsets)
@@ -162,9 +162,9 @@ end
 # ========================
 # SCALABILITY
 # ========================
-function eval_scalability(config, logger)
+function eval_scalability(config, logger; algo=FPGrowth.fpgrowth)
     process(logger, "Warming up JIT Compiler...")
-    FPGrowth.fpgrowth([[1,2], [1,3], [1,2,3]], 1)
+    algo([[1,2], [1,3], [1,2,3]], 1)
     phase(logger, "SCALABILITY")
     transactions = FPGrowth.read_spmf(config["dataset_path"])
     total_txs = length(transactions)
@@ -190,7 +190,7 @@ function eval_scalability(config, logger)
         # Julia
         GC.gc() 
         time_before = time_ns()
-        FPGrowth.fpgrowth(sliced_txs, min_sup_abs)
+        algo(sliced_txs, min_sup_abs)
         time_after = time_ns()
         julia_time = (time_after - time_before) / 1e9
         
@@ -386,7 +386,7 @@ end
 # ========================
 # AVG TRANSACTION LENGTH
 # ========================
-function eval_tx_length(config, logger)
+function eval_tx_length(config, logger; algo=FPGrowth.fpgrowth)
     phase(logger, "TRANSACTION LENGTH")
     
     # Parameters
@@ -410,7 +410,7 @@ function eval_tx_length(config, logger)
         GC.gc()
         mem_bytes = @allocated begin
             t0 = time_ns()
-            FPGrowth.fpgrowth(transactions, min_sup_abs)
+            algo(transactions, min_sup_abs)
             t1 = time_ns()
         end
         julia_time = (t1 - t0) / 1e9
