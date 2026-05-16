@@ -45,6 +45,39 @@ function eval_correctness(config, logger; algo=FPGrowth.fpgrowth)
     missing_in_mine = length(setdiff(spmf_res, my_res))
     missing_in_spmf = length(setdiff(my_res, spmf_res))
     
+    # --- THÊM ĐOẠN KIỂM TRA TOÀN BỘ VÀ IN 5 MẪU ĐỐI CHIẾU SUPPORT ---
+    is_all_support_match = (missing_in_mine == 0 && missing_in_spmf == 0 && length(my_res) == length(spmf_res))
+    if is_all_support_match
+        info(logger, "Matching #SUP for each itemset (Julia - SPMF) -> TRUE (100% Exact Match)")
+    else
+        total_baseline = max(length(spmf_res), 1)
+        common_count = length(intersect(my_res, spmf_res))
+        diff_percent = 100.0 - (common_count / total_baseline * 100)
+        info(logger, "Matching #SUP for each itemset (Julia - SPMF) -> FALSE")
+        info(logger, "Mismatch Percentage: ", round(diff_percent, digits=2))
+    end
+    println()
+
+    info(logger, "Support Match Samples (Top 5):")
+    common_itemsets = intersect(my_res, spmf_res)
+    sample_count = 0
+    for item in common_itemsets
+        parts = split(item, " - ")
+        if length(parts) == 2
+            itemset = parts[1]
+            sup = parts[2]
+            # In ra màn hình mẫu đối chiếu
+            metric(logger, "Itemset: { ", itemset, " } | Julia Sup: ", sup, " | SPMF Sup: ", sup, " => MATCH ✓")
+            sample_count += 1
+        end
+        if sample_count >= 5
+            break
+        end
+    end
+    println()
+    # ---------------------------------------------
+    
+    
     return Dict(
         "Julia_Count" => length(my_res),
         "SPMF_Count" => length(spmf_res),
@@ -129,11 +162,11 @@ function vis_performance(df::DataFrame, logger)
     x_vals = df_sorted.MinSup .* 100
     
     p_time = plot(x_vals, df_sorted.JuliaTime, label="Julia", marker=:circle, linewidth=2, color=:blue,
-                  title="Execution time", xlabel="MinSup (%)", ylabel="Second (s)", legend=:topright)
+                  title="Execution time", xlabel="MinSup (%)", ylabel="Second (s)", legend=:outertopright)
     plot!(p_time, x_vals, df_sorted.SPMFTime, label="SPMF", marker=:square, linewidth=2, color=:green)
     
     p_memory = plot(x_vals, df_sorted.JuliaMemory, label="Julia", marker=:circle, linewidth=2, color=:blue,
-                 title="Memory consumption", xlabel="MinSup (%)", ylabel="Megabytes (MB)", legend=:topright)
+                 title="Memory consumption", xlabel="MinSup (%)", ylabel="Megabytes (MB)", legend=:outertopright)
     plot!(p_memory, x_vals, df_sorted.SPMFMemory, label="SPMF", marker=:square, linewidth=2, color=:green)
     
     display(plot(p_time, p_memory, layout=(1,2), size=(900, 400), bottom_margin=8mm, left_margin=5mm))
