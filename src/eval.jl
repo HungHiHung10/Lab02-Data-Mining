@@ -140,7 +140,7 @@ function vis_performance(df::DataFrame, logger)
 end
 
 function vis_minSupNFI(df::DataFrame, logger)
-    phase(logger, "visualize output size")
+    phase(logger, "visualize")
     df_sorted = sort(df, :MinSup)
     x_vals = df_sorted.MinSup .* 100
     
@@ -264,7 +264,7 @@ function run_unitTest(config, logger)
             
             missing_in_julia = length(setdiff(spmf_res, julia_res))
             missing_in_spmf = length(setdiff(julia_res, spmf_res))
-            
+            info(logger, "Evaluate Julia result and SPMF result")
             if missing_in_julia == 0 && missing_in_spmf == 0
                 success(logger, "✓ Test ", i, " Passed (", length(julia_res), " itemsets)")
                 passed += 1
