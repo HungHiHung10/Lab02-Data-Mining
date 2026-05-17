@@ -230,7 +230,7 @@ eval_performance(CONFIG, logger, methods=[:base, :opt])   # Cơ bản vs Tối �
 eval_performance(CONFIG, logger, methods=[:opt,  :spmf])  # Tối ưu vs SPMF
 ```
 """
-function eval_performance(config, logger; methods::Vector{Symbol}=[:base, :spmf], method=nothing, algo=nothing)
+function eval_performance(config, logger; methods::Vector{Symbol}=[:opt, :spmf], method=nothing, algo=nothing)
     # Backward compatibility: nếu truyền algo= hoặc method= (hàm Julia cũ)
     legacy_algo = algo !== nothing ? algo : method
     if legacy_algo !== nothing
@@ -338,49 +338,87 @@ function vis_performance(df::DataFrame, logger)
     df_sorted = sort(df, :MinSup, rev=true)
     x_vals = df_sorted.MinSup .* 100
     
+    # Khai báo các biến dùng chung ngoài khối if
+    p_time = nothing
+    p_memory = nothing
+    p_legend = nothing
+
     # Phát hiện format: mới (có _label_a) hoặc cũ (có JuliaTime)
     if hasproperty(df_sorted, :_label_a)
         # === Format mới: TimeA/MemA/TimeB/MemB + label metadata ===
         label_a = df_sorted[1, :_label_a]
         label_b = df_sorted[1, :_label_b]
-        # Màu sắc theo từng phương pháp
+        
         color_a = label_a == "FP-Growth Optimized" ? :blue  :
                   label_a == "SPMF Java"            ? :green : :gray
         color_b = label_b == "FP-Growth Optimized" ? :blue  :
                   label_b == "SPMF Java"            ? :green : :gray
         
-        # Dùng line style khác nhau để phân biệt khi 2 đường chồng nhau
+        # 1. Vẽ đồ thị Time (không hiện legend)
         p_time = plot(x_vals, df_sorted.TimeA,
-                      label=label_a, marker=:circle, linewidth=2.5,
+                      label="", marker=:circle, linewidth=2.5,
                       color=color_a, linestyle=:dash,
-                      title="Execution time", xlabel="MinSup (%)", ylabel="Second (s)", legend=:outertopright)
+                      title="Execution time", xlabel="MinSup (%)", ylabel="Second (s)", legend=false)
         plot!(p_time, x_vals, df_sorted.TimeB,
-              label=label_b, marker=:square, linewidth=2,
+              label="", marker=:square, linewidth=2,
               color=color_b, linestyle=:solid)
         
+        # 2. Vẽ đồ thị Memory (không hiện legend)
         p_memory = plot(x_vals, df_sorted.MemA,
-                        label=label_a, marker=:circle, linewidth=2.5,
+                        label="", marker=:circle, linewidth=2.5,
                         color=color_a, linestyle=:dash,
-                        title="Memory consumption", xlabel="MinSup (%)", ylabel="Megabytes (MB)", legend=:outertopright)
+                        title="Memory consumption", xlabel="MinSup (%)", ylabel="Megabytes (MB)", legend=false)
         plot!(p_memory, x_vals, df_sorted.MemB,
-              label=label_b, marker=:square, linewidth=2,
+              label="", marker=:square, linewidth=2,
               color=color_b, linestyle=:solid)
+
+        # 3. Vẽ dummy plot chứa Legend nằm ngang căn giữa (Khớp màu/marker đồ thị chính)
+        p_legend = plot([0 0], showaxis=false, grid=false, 
+                        label=[label_a label_b], 
+                        color=[color_a color_b],
+                        marker=[:circle :square],
+                        linestyle=[:dash :solid],
+                        linewidth=2.5,
+                        legend=:top, 
+                        legendcolumns=2, 
+                        frame=:none,
+                        xlims=(2, 3), ylims=(2, 3))
     else
         # === Format cũ: JuliaTime/SPMFTime/JuliaMemory/SPMFMemory ===
+        # 1. Vẽ đồ thị Time (không hiện legend)
         p_time = plot(x_vals, df_sorted.JuliaTime,
-                      label="Julia", marker=:circle, linewidth=2.5, color=:blue, linestyle=:dash,
-                      title="Execution time", xlabel="MinSup (%)", ylabel="Second (s)", legend=:outertopright)
+                      label="", marker=:circle, linewidth=2.5, color=:blue, linestyle=:dash,
+                      title="Execution time", xlabel="MinSup (%)", ylabel="Second (s)", legend=false)
         plot!(p_time, x_vals, df_sorted.SPMFTime,
-              label="SPMF", marker=:square, linewidth=2, color=:green, linestyle=:solid)
+              label="", marker=:square, linewidth=2, color=:green, linestyle=:solid)
         
+        # 2. Vẽ đồ thị Memory (không hiện legend)
         p_memory = plot(x_vals, df_sorted.JuliaMemory,
-                        label="Julia", marker=:circle, linewidth=2.5, color=:blue, linestyle=:dash,
-                        title="Memory consumption", xlabel="MinSup (%)", ylabel="Megabytes (MB)", legend=:outertopright)
+                        label="", marker=:circle, linewidth=2.5, color=:blue, linestyle=:dash,
+                        title="Memory consumption", xlabel="MinSup (%)", ylabel="Megabytes (MB)", legend=false)
         plot!(p_memory, x_vals, df_sorted.SPMFMemory,
-              label="SPMF", marker=:square, linewidth=2, color=:green, linestyle=:solid)
+              label="", marker=:square, linewidth=2, color=:green, linestyle=:solid)
+
+        # 3. Vẽ dummy plot chứa Legend nằm ngang căn giữa
+        p_legend = plot([0 0], showaxis=false, grid=false, 
+                        label=["Julia" "SPMF"], 
+                        color=[:blue :green],
+                        marker=[:circle :square],
+                        linestyle=[:dash :solid],
+                        linewidth=2.5,
+                        legend=:top, 
+                        legendcolumns=2, 
+                        frame=:none,
+                        xlims=(2, 3), ylims=(2, 3))
     end
     
-    display(plot(p_time, p_memory, layout=(1,2), size=(900, 400), bottom_margin=8mm, left_margin=5mm))
+    # Tạo layout: Hàng trên là 2 plot, hàng dưới là legend chung căn giữa
+    l = @layout [
+        [a b]
+        c{0.12h}
+    ]
+    
+    display(plot(p_time, p_memory, p_legend, layout=l, size=(900, 450), bottom_margin=5mm, left_margin=5mm))
 end
 
 
@@ -646,7 +684,7 @@ end
 # ========================
 # AVG TRANSACTION LENGTH
 # ========================
-function eval_tx_length(config, logger; algo=FPGrowth.fpgrowth)
+function eval_transaction_length(config, logger; algo=FPGrowth.fpgrowth)
     phase(logger, "TRANSACTION LENGTH")
     
     # Parameters
@@ -688,20 +726,38 @@ function eval_tx_length(config, logger; algo=FPGrowth.fpgrowth)
     return results_df
 end
 
-function vis_tx_length(df::DataFrame, logger)
+function vis_transaction_length(df::DataFrame, logger)
     phase(logger, "visualize")
     
-    # Biểu đồ thời gian
-    p_time = plot(df.AvgLength, df.JuliaTime, label="Julia", marker=:circle, color=:blue,
+    # 1. Biểu đồ thời gian (không hiện legend)
+    p_time = plot(df.AvgLength, df.JuliaTime, label="", marker=:circle, linewidth=2.5, color=:blue, linestyle=:dash,
                   title="Execution Time vs Avg Length",
-                  xlabel="Average Length", ylabel="Time (s)", legend=:topleft)
-    plot!(p_time, df.AvgLength, df.SPMFTime, label="SPMF", marker=:square, color=:green)
+                  xlabel="Average Length", ylabel="Time (s)", legend=false)
+    plot!(p_time, df.AvgLength, df.SPMFTime, label="", marker=:square, linewidth=2, color=:green, linestyle=:solid)
     
-    # Biểu đồ bộ nhớ
-    p_mem = plot(df.AvgLength, df.JuliaMemory, label="Julia", marker=:circle, color=:blue,
+    # 2. Biểu đồ bộ nhớ (không hiện legend)
+    p_mem = plot(df.AvgLength, df.JuliaMemory, label="", marker=:circle, linewidth=2.5, color=:blue, linestyle=:dash,
                  title="Memory vs Avg Length",
-                 xlabel="Average Length", ylabel="Memory (MB)", legend=:topleft)
-    plot!(p_mem, df.AvgLength, df.SPMFMemory, label="SPMF", marker=:square, color=:green)
+                 xlabel="Average Length", ylabel="Memory (MB)", legend=false)
+    plot!(p_mem, df.AvgLength, df.SPMFMemory, label="", marker=:square, linewidth=2, color=:green, linestyle=:solid)
     
-    display(plot(p_time, p_mem, layout=(1,2), size=(900, 400), bottom_margin=8mm, left_margin=5mm))
+    # 3. Vẽ dummy plot chứa Legend nằm ngang căn giữa
+    p_legend = plot([0 0], showaxis=false, grid=false, 
+                    label=["Julia" "SPMF"], 
+                    color=[:blue :green],
+                    marker=[:circle :square],
+                    linestyle=[:dash :solid],
+                    linewidth=2.5,
+                    legend=:top, 
+                    legendcolumns=2, 
+                    frame=:none,
+                    xlims=(2, 3), ylims=(2, 3))
+    
+    # Tạo layout: Hàng trên là 2 plot, hàng dưới là legend chung căn giữa
+    l = @layout [
+        [a b]
+        c{0.12h}
+    ]
+    
+    display(plot(p_time, p_mem, p_legend, layout=l, size=(900, 450), bottom_margin=5mm, left_margin=5mm))
 end
