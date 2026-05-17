@@ -18,139 +18,316 @@ using ProgressMeter
 using Statistics
 
 # ========================
+# HELPERS: RUN & PARSE
+# ========================
+"""
+    _run_algo(sym, transactions, min_sup_abs, config, out_path, Min_Sup)
+
+Chạy một trong 3 phương pháp và trả về (Set{String} kết quả, thời gian chạy, bộ nhớ MB).
+- sym = :base   → fpgrowth cơ bản
+- sym = :opt    → fpgrowth_opt tối ưu
+- sym = :spmf   → SPMF Java baseline
+"""
+function _run_algo(sym::Symbol, transactions, min_sup_abs::Int, config, out_path::String, Min_Sup::Float64)
+    GC.gc()
+    if sym == :base
+        mem = 0; t = 0.0; t0 = time_ns(); t1 = time_ns()
+        mem = @allocated begin
+            t0 = time_ns()
+            res = FPGrowth.fpgrowth(transactions, min_sup_abs)
+            t1 = time_ns()
+        end
+        t = (t1 - t0) / 1e9
+        res_set = Set{String}(join(sort(k), " ") * " - " * string(v) for (k, v) in res)
+        return res_set, t, mem / (1024^2)
+    elseif sym == :opt
+        mem = 0; t = 0.0; t0 = time_ns(); t1 = time_ns()
+        mem = @allocated begin
+            t0 = time_ns()
+            res = FPGrowth.fpgrowth_opt(transactions, min_sup_abs)
+            t1 = time_ns()
+        end
+        t = (t1 - t0) / 1e9
+        res_set = Set{String}(join(sort(k), " ") * " - " * string(v) for (k, v) in res)
+        return res_set, t, mem / (1024^2)
+    elseif sym == :spmf
+        t, mem_mb = Utils.execute_spmf(config, config["dataset_path"], out_path, Min_Sup)
+        res_set = Utils.parse_output(out_path)
+        return res_set, t, mem_mb
+    else
+        error("Unknown algo symbol: $sym. Use :base, :opt, or :spmf")
+    end
+end
+
+_label(sym::Symbol) = sym == :base ? "FP-Growth Basic" : sym == :opt ? "FP-Growth Optimized" : "SPMF Java"
+_color(sym::Symbol) = sym == :base ? :gray : sym == :opt ? :blue : :green
+
+# ========================
 # CORRECTNESS
 # ========================
-function eval_correctness(config, logger; algo=FPGrowth.fpgrowth)
-    phase(logger, "CORRECTNESS")
-    info(logger, "Verify accuracy at the threshold MinSup=", config["Minimum Support"] * 100, "%")
-    
-    transactions = FPGrowth.read_spmf(config["dataset_path"])
-    total_txs = length(transactions)
-    min_sup_abs = ceil(Int, config["Minimum Support"] * total_txs)
-    
-    # 1. Chạy Julia
-    process(logger, "Executing Julia From Scratch (Proposed)...")
-    julia_result = algo(transactions, min_sup_abs)
-    FPGrowth.write_spmf(config["proposed_result"], julia_result)
-    
-    # 2. Chạy SPMF
-    process(logger, "Executing SPMF Built-in (Baseline)...")
-    Utils.execute_spmf(config, config["dataset_path"], config["baseline_result"], config["Minimum Support"])
-    
-    # 3. So khớp
-    info(logger, "Comparing results...")
-    my_res = Utils.parse_output(config["proposed_result"])
-    spmf_res = Utils.parse_output(config["baseline_result"])
-    
-    missing_in_mine = length(setdiff(spmf_res, my_res))
-    missing_in_spmf = length(setdiff(my_res, spmf_res))
-    
-    # --- THÊM ĐOẠN KIỂM TRA TOÀN BỘ VÀ IN 5 MẪU ĐỐI CHIẾU SUPPORT ---
-    is_all_support_match = (missing_in_mine == 0 && missing_in_spmf == 0 && length(my_res) == length(spmf_res))
-    if is_all_support_match
-        info(logger, "Matching #SUP for each itemset (Julia - SPMF) -> TRUE (100% Exact Match)")
+"""
+    eval_correctness(config, logger; methods=[:base, :spmf], min_sup=nothing)
+
+So sánh tính đúng đắn giữa 2 trong 3 phương pháp:
+- `:base`  → FP-Growth cơ bản
+- `:opt`   → FP-Growth tối ưu (Single Path Pruning + BitArray)
+- `:spmf`  → SPMF Java (Ground Truth)
+
+**Ví dụ:**
+```julia
+eval_correctness(CONFIG, logger, methods=[:base, :spmf])  # Julia vs SPMF
+eval_correctness(CONFIG, logger, methods=[:base, :opt])   # Basic vs Optimized
+eval_correctness(CONFIG, logger, methods=[:opt,  :spmf])  # Optimized vs SPMF
+```
+"""
+function eval_correctness(config, logger; methods::Vector{Symbol}=[:base, :spmf], min_sup=nothing, method=nothing, algo=nothing)
+    # Backward compatibility: nếu truyền algo= hoặc method= (hàm Julia cũ)
+    legacy_algo = algo !== nothing ? algo : method
+    if legacy_algo !== nothing
+        return _eval_correctness_legacy(config, logger, legacy_algo)
+    end
+
+    length(methods) == 2 || error("methods phải có đúng 2 phần tử, ví dụ: [:base, :spmf]")
+    sym_a, sym_b = methods[1], methods[2]
+
+    phase(logger, "CORRECTNESS: $(_label(sym_a)) vs $(_label(sym_b))")
+
+    path = haskey(config, "dataset_path") ? config["dataset_path"] : config["datasets_path"][1]
+    Min_Sup = (min_sup !== nothing) ? Float64(min_sup) : Float64(config["Minimum Support"])
+
+    transactions = FPGrowth.read_spmf(path)
+    min_sup_abs  = ceil(Int, Min_Sup * length(transactions))
+    info(logger, "Dataset: ", basename(path), " | MinSup=", Min_Sup * 100, "% | Transactions=", length(transactions))
+
+    spmf_out = joinpath("..", "results", "_tmp_correctness.txt")
+
+    process(logger, "Running $(_label(sym_a))...")
+    res_a, _, _ = _run_algo(sym_a, transactions, min_sup_abs, config, spmf_out, Min_Sup)
+
+    process(logger, "Running $(_label(sym_b))...")
+    res_b, _, _ = _run_algo(sym_b, transactions, min_sup_abs, config, spmf_out, Min_Sup)
+
+    rm(spmf_out, force=true)
+
+    # So sánh
+    missing_in_a = length(setdiff(res_b, res_a))
+    missing_in_b = length(setdiff(res_a, res_b))
+    match_rate   = length(intersect(res_a, res_b)) / max(length(res_b), 1) * 100
+
+    info(logger, "$(_label(sym_a)) count: ", length(res_a), " | $(_label(sym_b)) count: ", length(res_b))
+
+    if missing_in_a == 0 && missing_in_b == 0
+        info(logger, "Matching #SUP for each itemset → TRUE (100% Exact Match)")
     else
-        total_baseline = max(length(spmf_res), 1)
-        common_count = length(intersect(my_res, spmf_res))
-        diff_percent = 100.0 - (common_count / total_baseline * 100)
-        info(logger, "Matching #SUP for each itemset (Julia - SPMF) -> FALSE")
-        info(logger, "Mismatch Percentage: ", round(diff_percent, digits=2))
+        info(logger, "Matching #SUP → FALSE | Match rate: ", round(match_rate, digits=2), "%")
+        info(logger, "Missing in $(_label(sym_a)): ", missing_in_a, " | Missing in $(_label(sym_b)): ", missing_in_b)
+    end
+
+    # In 5 mẫu khớp nhau
+    info(logger, "Support Match Samples (Top 5):")
+    count = 0
+    for item in intersect(res_a, res_b)
+        parts = split(item, " - ")
+        length(parts) == 2 || continue
+        metric(logger, "Itemset: { ", parts[1], " } | Support: ", parts[2], " => MATCH ✓")
+        count += 1
+        count >= 5 && break
     end
     println()
 
-    info(logger, "Support Match Samples (Top 5):")
-    common_itemsets = intersect(my_res, spmf_res)
-    sample_count = 0
-    for item in common_itemsets
-        parts = split(item, " - ")
-        if length(parts) == 2
-            itemset = parts[1]
-            sup = parts[2]
-            # In ra màn hình mẫu đối chiếu
-            metric(logger, "Itemset: { ", itemset, " } | Julia Sup: ", sup, " | SPMF Sup: ", sup, " => MATCH ✓")
-            sample_count += 1
-        end
-        if sample_count >= 5
-            break
-        end
+    return Dict(
+        "$(_label(sym_a))_Count" => length(res_a),
+        "$(_label(sym_b))_Count" => length(res_b),
+        "Missing_in_A" => missing_in_a,
+        "Missing_in_B" => missing_in_b,
+        "Match_Rate"   => match_rate,
+        "Label_A"      => _label(sym_a),
+        "Label_B"      => _label(sym_b)
+    )
+end
+
+# Backward-compatible legacy version (khi truyền algo= hàm Julia)
+function _eval_correctness_legacy(config, logger, algo)
+    phase(logger, "CORRECTNESS")
+    info(logger, "Verify accuracy at the threshold MinSup=", config["Minimum Support"] * 100, "%")
+    transactions = FPGrowth.read_spmf(config["dataset_path"])
+    min_sup_abs = ceil(Int, config["Minimum Support"] * length(transactions))
+    process(logger, "Executing Julia...")
+    julia_result = algo(transactions, min_sup_abs)
+    FPGrowth.write_spmf(config["proposed_result"], julia_result)
+    process(logger, "Executing SPMF...")
+    Utils.execute_spmf(config, config["dataset_path"], config["baseline_result"], config["Minimum Support"])
+    my_res   = Utils.parse_output(config["proposed_result"])
+    spmf_res = Utils.parse_output(config["baseline_result"])
+    missing_in_mine = length(setdiff(spmf_res, my_res))
+    missing_in_spmf = length(setdiff(my_res, spmf_res))
+    if missing_in_mine == 0 && missing_in_spmf == 0
+        info(logger, "Matching #SUP → TRUE (100% Exact Match)")
+    else
+        info(logger, "Matching #SUP → FALSE | Missing in Julia: ", missing_in_mine, " | Missing in SPMF: ", missing_in_spmf)
     end
     println()
-    # ---------------------------------------------
-    
-    
-    return Dict(
-        "Julia_Count" => length(my_res),
-        "SPMF_Count" => length(spmf_res),
-        "Missing_in_Julia" => missing_in_mine,
-        "Missing_in_SPMF" => missing_in_spmf
-    )
+    info(logger, "Support Match Samples (Top 5):")
+    count = 0
+    for item in intersect(my_res, spmf_res)
+        parts = split(item, " - ")
+        length(parts) == 2 || continue
+        metric(logger, "Itemset: { ", parts[1], " } | Support: ", parts[2], ": Match ✓")
+        count += 1; count >= 5 && break
+    end
+    println()
+    return Dict("Julia_Count" => length(my_res), "SPMF_Count" => length(spmf_res),
+                "Missing_in_Julia" => missing_in_mine, "Missing_in_SPMF" => missing_in_spmf)
 end
 
 function vis_correctness(res::Dict, logger)
     phase(logger, "Visualize")
-    if res["Missing_in_Julia"] == 0 && res["Missing_in_SPMF"] == 0
-        success(logger, "Correct (", res["Julia_Count"], " frequent itemsets)")
+
+    # Hỗ trợ cả format mới (Label_A/B) và cũ (Julia_Count/SPMF_Count)
+    if haskey(res, "Label_A")
+        label_a = res["Label_A"]; label_b = res["Label_B"]
+        count_a = res["$(label_a)_Count"]; count_b = res["$(label_b)_Count"]
+        if res["Missing_in_A"] == 0 && res["Missing_in_B"] == 0
+            success(logger, "Correct (", count_a, " itemsets matched 100%)")
+        else
+            fail(logger, "Incorrect: Match Rate = ", round(res["Match_Rate"], digits=2), "%")
+        end
+        categories = [label_a, label_b]
+        counts     = [count_a, count_b]
     else
-        fail(logger, "Incorrect: Missing in Julia: ", res["Missing_in_Julia"], " | Missing in SPMF: ", res["Missing_in_SPMF"])
+        if res["Missing_in_Julia"] == 0 && res["Missing_in_SPMF"] == 0
+            success(logger, "Correct (", res["Julia_Count"], " frequent itemsets)")
+        else
+            fail(logger, "Incorrect: Missing in Julia: ", res["Missing_in_Julia"], " | Missing in SPMF: ", res["Missing_in_SPMF"])
+        end
+        categories = ["Julia From Scratch", "SPMF Built-in"]
+        counts     = [res["Julia_Count"], res["SPMF_Count"]]
     end
-    
-    # Vẽ biểu đồ Cột
-    categories = ["Julia From Scratch", "SPMF Built-in"]
-    counts = [res["Julia_Count"], res["SPMF_Count"]]
-    
-    p = bar(categories, counts, 
-            title="Correctness evaluation",
-            ylabel="Itemsets", 
-            legend=false, 
-            color=[:blue, :green], 
-            bar_width=0.4)
+
+    p = bar(categories, counts, title="Correctness Evaluation", ylabel="Frequent Itemsets",
+            legend=false, color=[:blue, :green], bar_width=0.4)
     display(plot(p, bottom_margin=5mm))
 end
+
+
+
 
 # ========================
 # PERFORMANCE
 # ========================
-function eval_performance(config, logger; algo=FPGrowth.fpgrowth)
+"""
+    eval_performance(config, logger; methods=[:base, :spmf], min_sup=nothing)
+
+Đo hiệu năng (thời gian + bộ nhớ) giữa 2 trong 3 phương pháp:
+- `:base`  → FP-Growth cơ bản
+- `:opt`   → FP-Growth tối ưu (Single Path Pruning + BitArray)
+- `:spmf`  → SPMF Java (Ground Truth)
+
+**Ví dụ:**
+```julia
+eval_performance(CONFIG, logger, methods=[:base, :spmf])  # Cơ bản vs SPMF
+eval_performance(CONFIG, logger, methods=[:base, :opt])   # Cơ bản vs Tối ưu
+eval_performance(CONFIG, logger, methods=[:opt,  :spmf])  # Tối ưu vs SPMF
+```
+"""
+function eval_performance(config, logger; methods::Vector{Symbol}=[:base, :spmf], method=nothing, algo=nothing)
+    # Backward compatibility: nếu truyền algo= hoặc method= (hàm Julia cũ)
+    legacy_algo = algo !== nothing ? algo : method
+    if legacy_algo !== nothing
+        return _eval_performance_legacy(config, logger, legacy_algo)
+    end
+
+    length(methods) == 2 || error("methods phải có đúng 2 phần tử, ví dụ: [:base, :spmf]")
+    sym_a, sym_b = methods[1], methods[2]
+    
+    # Warm up JIT
+    process(logger, "Warming up JIT Compiler...")
+    FPGrowth.fpgrowth([[1,2],[1,3],[1,2,3]], 1)
+    FPGrowth.fpgrowth_opt([[1,2],[1,3],[1,2,3]], 1)
+    
+    phase(logger, "PERFORMANCE: $(_label(sym_a)) vs $(_label(sym_b))")
+    path = haskey(config, "dataset_path") ? config["dataset_path"] : config["datasets_path"][1]
+    transactions = FPGrowth.read_spmf(path)
+    info(logger, "Dataset: ", basename(path), " | Transactions: ", length(transactions))
+    
+    N_RUNS = get(config, "n_executes", 5)
+    spmf_out = joinpath("..", "results", "_tmp_perf.txt")
+    results_df = DataFrame(
+        MinSup=Float64[], Itemsets=Int[],
+        TimeA=Float64[], MemA=Float64[],
+        TimeB=Float64[], MemB=Float64[]
+    )
+
+    @showprogress "Benchmarking... " for min_sup_ratio in config["min_sups"]
+        Min_Sup = Float64(min_sup_ratio)
+        min_sup_abs = ceil(Int, Min_Sup * length(transactions))
+        process(logger, "MinSup = ", Min_Sup * 100, "% ...")
+        
+        # --- Phương pháp A ---
+        times_a = Float64[]; mems_a = Float64[]; itemsets_a = 0
+        n_runs_a = (sym_a == :spmf) ? 1 : N_RUNS
+        for _ in 1:n_runs_a
+            res_set, t, mem = _run_algo(sym_a, transactions, min_sup_abs, config, spmf_out, Min_Sup)
+            itemsets_a = length(res_set)
+            push!(times_a, t); push!(mems_a, mem)
+        end
+        ta = median(times_a); ma = median(mems_a)
+        
+        # --- Phương pháp B ---
+        times_b = Float64[]; mems_b = Float64[]; itemsets_b = 0
+        n_runs_b = (sym_b == :spmf) ? 1 : N_RUNS
+        for _ in 1:n_runs_b
+            res_set, t, mem = _run_algo(sym_b, transactions, min_sup_abs, config, spmf_out, Min_Sup)
+            itemsets_b = length(res_set)
+            push!(times_b, t); push!(mems_b, mem)
+        end
+        tb = median(times_b); mb = median(mems_b)
+        
+        metric(logger, "$(_label(sym_a)) → Time: ", round(ta,digits=3), "s | Memory: ", round(ma,digits=2), "MB | Itemsets: ", itemsets_a)
+        metric(logger, "$(_label(sym_b)) → Time: ", round(tb,digits=3), "s | Memory: ", round(mb,digits=2), "MB | Itemsets: ", itemsets_b)
+        
+        push!(results_df, (min_sup_ratio, itemsets_a, ta, ma, tb, mb))
+    end
+    
+    rm(spmf_out, force=true)
+    # Lưu metadata nhãn vào cột riêng (không rename cột TimeA/MemA để tránh lỗi ký tự đặc biệt)
+    results_df[!, :_label_a] .= _label(sym_a)
+    results_df[!, :_label_b] .= _label(sym_b)
+    if haskey(config, "performance_result")
+        CSV.write(config["performance_result"], results_df)
+        success(logger, "Saved at ", config["performance_result"])
+    end
+    return results_df
+end
+
+# Backward-compatible legacy version
+function _eval_performance_legacy(config, logger, algo)
     process(logger, "Warming up JIT Compiler...")
     algo([[1,2], [1,3], [1,2,3]], 1)
     phase(logger, "PERFORMANCE")
     transactions = FPGrowth.read_spmf(config["dataset_path"])
     total_txs = length(transactions)
     info(logger, "Transactions: ", total_txs)
-    
     N_RUNS = get(config, "n_executes", 5)
     results_df = DataFrame(MinSup=Float64[], Itemsets=Int[], JuliaTime=Float64[], JuliaMemory=Float64[], SPMFTime=Float64[], SPMFMemory=Float64[])
-
     @showprogress "Benchmarking... " for min_sup_ratio in config["min_sups"]
-        process(logger, "Executing with min_sup = ", min_sup_ratio * 100, "% in ", N_RUNS, " times...")
         min_sup_abs = ceil(Int, min_sup_ratio * total_txs)
-        
-        julia_times = Float64[]
-        julia_memories  = Float64[] 
-        itemset_count = 0
+        julia_times = Float64[]; julia_memories = Float64[]; itemset_count = 0
         for _ in 1:N_RUNS
-            GC.gc() 
-            local frequent_itemsets
+            GC.gc()
             mem_bytes = @allocated begin
                 t0 = time_ns()
-                frequent_itemsets = algo(transactions, min_sup_abs)
+                fi = algo(transactions, min_sup_abs)
                 t1 = time_ns()
+                itemset_count = length(fi)
             end
-            itemset_count = length(frequent_itemsets)
-            push!(julia_times, (t1 - t0) / 1e9)
-            push!(julia_memories,  mem_bytes / (1024^2))
+            push!(julia_times, (t1-t0)/1e9); push!(julia_memories, mem_bytes/(1024^2))
         end
-        julia_time   = median(julia_times)
-        julia_memory = median(julia_memories)
-        
         spmf_time, spmf_memory = Utils.execute_spmf(config, config["dataset_path"], config["baseline_result"], min_sup_ratio)
-        
-        metric(logger, "Julia From Scratch (Proposed)  → Time: ", round(julia_time, digits=3), "s | Memory: ", round(julia_memory, digits=2), " MB | Itemsets: ", itemset_count)
-        metric(logger, "SPMF Built-in (Baseline)  → Time: ", round(spmf_time, digits=3), "s | Memory: ", round(spmf_memory, digits=2), " MB")
-        
-        push!(results_df, (min_sup_ratio, itemset_count, julia_time, julia_memory, spmf_time, spmf_memory))
+        metric(logger, "Julia → Time: ", round(median(julia_times),digits=3), "s | Mem: ", round(median(julia_memories),digits=2), "MB")
+        metric(logger, "SPMF  → Time: ", round(spmf_time,digits=3), "s | Mem: ", round(spmf_memory,digits=2), "MB")
+        push!(results_df, (min_sup_ratio, itemset_count, median(julia_times), median(julia_memories), spmf_time, spmf_memory))
     end
-    
     CSV.write(config["performance_result"], results_df)
     success(logger, "Saved at ", config["performance_result"])
     return results_df
@@ -161,16 +338,53 @@ function vis_performance(df::DataFrame, logger)
     df_sorted = sort(df, :MinSup, rev=true)
     x_vals = df_sorted.MinSup .* 100
     
-    p_time = plot(x_vals, df_sorted.JuliaTime, label="Julia", marker=:circle, linewidth=2, color=:blue,
-                  title="Execution time", xlabel="MinSup (%)", ylabel="Second (s)", legend=:outertopright)
-    plot!(p_time, x_vals, df_sorted.SPMFTime, label="SPMF", marker=:square, linewidth=2, color=:green)
-    
-    p_memory = plot(x_vals, df_sorted.JuliaMemory, label="Julia", marker=:circle, linewidth=2, color=:blue,
-                 title="Memory consumption", xlabel="MinSup (%)", ylabel="Megabytes (MB)", legend=:outertopright)
-    plot!(p_memory, x_vals, df_sorted.SPMFMemory, label="SPMF", marker=:square, linewidth=2, color=:green)
+    # Phát hiện format: mới (có _label_a) hoặc cũ (có JuliaTime)
+    if hasproperty(df_sorted, :_label_a)
+        # === Format mới: TimeA/MemA/TimeB/MemB + label metadata ===
+        label_a = df_sorted[1, :_label_a]
+        label_b = df_sorted[1, :_label_b]
+        # Màu sắc theo từng phương pháp
+        color_a = label_a == "FP-Growth Optimized" ? :blue  :
+                  label_a == "SPMF Java"            ? :green : :gray
+        color_b = label_b == "FP-Growth Optimized" ? :blue  :
+                  label_b == "SPMF Java"            ? :green : :gray
+        
+        # Dùng line style khác nhau để phân biệt khi 2 đường chồng nhau
+        p_time = plot(x_vals, df_sorted.TimeA,
+                      label=label_a, marker=:circle, linewidth=2.5,
+                      color=color_a, linestyle=:dash,
+                      title="Execution time", xlabel="MinSup (%)", ylabel="Second (s)", legend=:outertopright)
+        plot!(p_time, x_vals, df_sorted.TimeB,
+              label=label_b, marker=:square, linewidth=2,
+              color=color_b, linestyle=:solid)
+        
+        p_memory = plot(x_vals, df_sorted.MemA,
+                        label=label_a, marker=:circle, linewidth=2.5,
+                        color=color_a, linestyle=:dash,
+                        title="Memory consumption", xlabel="MinSup (%)", ylabel="Megabytes (MB)", legend=:outertopright)
+        plot!(p_memory, x_vals, df_sorted.MemB,
+              label=label_b, marker=:square, linewidth=2,
+              color=color_b, linestyle=:solid)
+    else
+        # === Format cũ: JuliaTime/SPMFTime/JuliaMemory/SPMFMemory ===
+        p_time = plot(x_vals, df_sorted.JuliaTime,
+                      label="Julia", marker=:circle, linewidth=2.5, color=:blue, linestyle=:dash,
+                      title="Execution time", xlabel="MinSup (%)", ylabel="Second (s)", legend=:outertopright)
+        plot!(p_time, x_vals, df_sorted.SPMFTime,
+              label="SPMF", marker=:square, linewidth=2, color=:green, linestyle=:solid)
+        
+        p_memory = plot(x_vals, df_sorted.JuliaMemory,
+                        label="Julia", marker=:circle, linewidth=2.5, color=:blue, linestyle=:dash,
+                        title="Memory consumption", xlabel="MinSup (%)", ylabel="Megabytes (MB)", legend=:outertopright)
+        plot!(p_memory, x_vals, df_sorted.SPMFMemory,
+              label="SPMF", marker=:square, linewidth=2, color=:green, linestyle=:solid)
+    end
     
     display(plot(p_time, p_memory, layout=(1,2), size=(900, 400), bottom_margin=8mm, left_margin=5mm))
 end
+
+
+
 
 function vis_minSupNFI(df::DataFrame, logger)
     phase(logger, "visualize")
@@ -314,7 +528,7 @@ function run_unitTest(config, logger)
     end
     
     accuracy = (passed / total) * 100
-    phase(logger, "UNIT TEST RESULTS")
+    phase(logger, "Results")
     if passed == total
         success(logger, "Accuracy Rate: ", round(accuracy, digits=2), "% (Passed ", passed, "/", total, ")")
     else
@@ -324,97 +538,110 @@ function run_unitTest(config, logger)
     return accuracy
 end
 
-# ========================
-# OPTIMIZATION EVALUATION
-# ========================
-function eval_optimization(config, logger; min_sup=nothing)
-    phase(logger, "OPTIMIZATION COMPARISON")
+# # ========================
+# # OPTIMIZATION EVALUATION
+# # ========================
+# function eval_optimization(config, logger; min_sup=nothing)
+#     phase(logger, "OPTIMIZATION COMPARISON")
     
-    # Lấy đường dẫn file: ưu tiên dataset_path
-    path = haskey(config, "dataset_path") ? config["dataset_path"] : config["datasets_path"][1]
+#     # Lấy đường dẫn file: ưu tiên dataset_path
+#     path = haskey(config, "dataset_path") ? config["dataset_path"] : config["datasets_path"][1]
     
-    # Lấy min_sup: ưu tiên tham số truyền vào, nếu không có thì lấy từ config
-    Min_Sup = (min_sup !== nothing) ? min_sup : config["Minimum Support"]
+#     # Lấy min_sup: ưu tiên tham số truyền vào, nếu không có thì lấy từ config
+#     Min_Sup = (min_sup !== nothing) ? min_sup : config["Minimum Support"]
     
-    transactions = FPGrowth.read_spmf(path)
-    total_txs = length(transactions)
-    min_sup_abs = ceil(Int, Min_Sup * total_txs)
+#     transactions = FPGrowth.read_spmf(path)
+#     total_txs = length(transactions)
+#     min_sup_abs = ceil(Int, Min_Sup * total_txs)
     
-    info(logger, "Comparing Basic vs Optimized version on: ", basename(path))
-    info(logger, "Threshold MinSup=", Min_Sup * 100, "%")
+#     info(logger, "Comparing Basic vs Optimized version on: ", basename(path))
+#     info(logger, "Threshold MinSup=", Min_Sup * 100, "%")
     
-    # 1. Basic Version
-    process(logger, "Running Basic FPGrowth...")
-    GC.gc()
-    T = eltype(eltype(transactions)) # Xác định kiểu của item (ví dụ Int64)
-    res_basic = Dict{Vector{T}, Int}()
-    t_basic = @elapsed res_basic = FPGrowth.fpgrowth(transactions, min_sup_abs)
+#     # 1. Basic Version
+#     process(logger, "Running Basic FPGrowth...")
+#     GC.gc()
+#     T = eltype(eltype(transactions)) # Xác định kiểu của item (ví dụ Int64)
+#     res_basic = Dict{Vector{T}, Int}()
+#     t_basic = @elapsed res_basic = FPGrowth.fpgrowth(transactions, min_sup_abs)
     
-    # 2. Optimized Version
-    process(logger, "Running Optimized FPGrowth (Single Path Pruning + BitArray)...")
-    GC.gc()
-    res_opt = Dict{Vector{T}, Int}()
-    t_opt = @elapsed res_opt = FPGrowth.fpgrowth_opt(transactions, min_sup_abs)
+#     # 2. Optimized Version
+#     process(logger, "Running Optimized FPGrowth (Single Path Pruning + BitArray)...")
+#     GC.gc()
+#     res_opt = Dict{Vector{T}, Int}()
+#     t_opt = @elapsed res_opt = FPGrowth.fpgrowth_opt(transactions, min_sup_abs)
     
-    # === KIỂM TRA TÍNH ĐÚNG ĐẮN (CORRECTNESS CHECK) ===
-    is_correct = (res_basic == res_opt)
-    if is_correct
-        success(logger, "✓ Internal Consistency: Basic and Optimized versions match (", length(res_basic), " itemsets)")
-    else
-        fail(logger, "✗ Internal Discrepancy: Basic and Optimized results differ!")
-        info(logger, "Basic count: ", length(res_basic), " | Optimized count: ", length(res_opt))
-    end
+#     # === KIỂM TRA TÍNH ĐÚNG ĐẮN (CORRECTNESS CHECK) ===
+#     is_correct = (res_basic == res_opt)
+#     if is_correct
+#         success(logger, "✓ Internal Consistency: Basic and Optimized versions match (", length(res_basic), " itemsets)")
+#     else
+#         fail(logger, "✗ Internal Discrepancy: Basic and Optimized results differ!")
+#         info(logger, "Basic count: ", length(res_basic), " | Optimized count: ", length(res_opt))
+#     end
     
-    # === ĐỐI CHIẾU VỚI SPMF (NẾU CÓ CẤU HÌNH) ===
-    if haskey(config, "spmf_path") && isfile(config["spmf_path"])
-        process(logger, "Verifying results against SPMF Java baseline...")
-        spmf_out = joinpath("..", "results", "spmf_bench_temp.txt") # Đảm bảo đường dẫn đúng
-        Utils.execute_spmf(config, path, spmf_out, Min_Sup)
-        res_spmf = Utils.parse_output(spmf_out)
+#     # === ĐỐI CHIẾU VỚI SPMF (NẾU CÓ CẤU HÌNH) ===
+#     if haskey(config, "spmf_path") && isfile(config["spmf_path"])
+#         process(logger, "Verifying results against SPMF Java baseline...")
+#         spmf_out = joinpath("..", "results", "spmf_bench_temp.txt") # Đảm bảo đường dẫn đúng
+#         Utils.execute_spmf(config, path, spmf_out, Min_Sup)
+#         res_spmf = Utils.parse_output(spmf_out)
         
-        # Chuyển đổi res_opt (Dict) sang Set{String} để so sánh với kết quả từ SPMF
-        res_opt_set = Set{String}()
-        for (itemset, sup) in res_opt
-            push!(res_opt_set, join(itemset, " ") * " - " * string(sup))
-        end
+#         # Chuyển đổi res_opt (Dict) sang Set{String} để so sánh với kết quả từ SPMF
+#         res_opt_set = Set{String}()
+#         for (itemset, sup) in res_opt
+#             push!(res_opt_set, join(itemset, " ") * " - " * string(sup))
+#         end
         
-        if res_opt_set == res_spmf
-            success(logger, "✓ SPMF Verified: Julia results are identical to SPMF Java.")
-        else
-            fail(logger, "✗ SPMF Discrepancy! Julia results differ from SPMF Java.")
-            info(logger, "Julia count: ", length(res_opt), " | SPMF count: ", length(res_spmf))
+#         if res_opt_set == res_spmf
+#             success(logger, "✓ SPMF Verified: Julia results are identical to SPMF Java.")
+#         else
+#             fail(logger, "✗ SPMF Discrepancy! Julia results differ from SPMF Java.")
+#             info(logger, "Julia count: ", length(res_opt), " | SPMF count: ", length(res_spmf))
             
-            # Debug: In ra một vài phần tử khác biệt nếu cần
-            diff = setdiff(res_spmf, res_opt_set)
-            if !isempty(diff)
-                info(logger, "Sample missing in Julia: ", first(diff))
-            end
-        end
-    end
+#             # Debug: In ra một vài phần tử khác biệt nếu cần
+#             diff = setdiff(res_spmf, res_opt_set)
+#             if !isempty(diff)
+#                 info(logger, "Sample missing in Julia: ", first(diff))
+#             end
+#         end
+#     end
     
-    improvement = ((t_basic - t_opt) / t_basic) * 100
-    metric(logger, "Basic Time: ", round(t_basic, digits=4), "s")
-    metric(logger, "Optimized Time: ", round(t_opt, digits=4), "s")
+#     improvement = ((t_basic - t_opt) / t_basic) * 100
+#     metric(logger, "Basic Time: ", round(t_basic, digits=4), "s")
+#     metric(logger, "Optimized Time: ", round(t_opt, digits=4), "s")
     
-    if improvement > 0
-        success(logger, "Improvement: ", round(improvement, digits=2), "% faster")
-    else
-        info(logger, "No significant speedup observed for this dataset/minsup.")
-    end
+#     if improvement > 0
+#         success(logger, "Improvement: ", round(improvement, digits=2), "% faster")
+#     else
+#         info(logger, "No significant speedup observed for this dataset/minsup.")
+#     end
     
-    return DataFrame(Version=["Basic", "Optimized"], ExecutionTime=[t_basic, t_opt])
-end
+#     return DataFrame(Version=["Basic", "Optimized"], ExecutionTime=[t_basic, t_opt])
+# end
 
-function vis_optimization(df::DataFrame, logger)
-    phase(logger, "visualize")
-    p = bar(df.Version, df.ExecutionTime, 
-            title="Basic vs Optimized FP-Growth",
-            ylabel="Execution Time (s)",
-            legend=false,
-            color=[:gray, :blue],
-            bar_width=0.5)
-    display(plot(p, bottom_margin=5mm))
-end
+# function vis_optimization(df::DataFrame, logger)
+#     phase(logger, "visualize")
+    
+#     if hasproperty(df, :Version) && hasproperty(df, :ExecutionTime)
+#         # === Format cũ: từ eval_optimization() ===
+#         p = bar(df.Version, df.ExecutionTime,
+#                 title="Basic vs Optimized FP-Growth",
+#                 ylabel="Execution Time (s)",
+#                 legend=false,
+#                 color=[:gray, :blue],
+#                 bar_width=0.5)
+#         display(plot(p, bottom_margin=5mm))
+        
+#     elseif hasproperty(df, :_label_a)
+#         # === Format mới: từ eval_performance(algos=[:base, :opt]) ===
+#         # Gọi vis_performance để vẽ biểu đồ đường (line chart) đầy đủ hơn
+#         vis_performance(df, logger)
+        
+#     else
+#         @warn "vis_optimization: Không nhận ra định dạng DataFrame. Hãy dùng vis_performance() cho kết quả từ eval_performance()."
+#     end
+# end
+
 
 # ========================
 # AVG TRANSACTION LENGTH

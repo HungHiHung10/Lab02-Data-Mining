@@ -43,5 +43,5 @@ data/benchmark/*
 results/*
 .cursorrules
 docs/CSC14004 - Data Mining - P2 - Updated.txt
-
+tks.ipynb
 # Notice: Project.toml & Manifest.toml are kept tracking
