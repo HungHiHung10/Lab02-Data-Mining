@@ -262,7 +262,7 @@ function run_unitTest(config, logger)
     min_sup = config["Minimum Support"]
     results_dir = config["results_path"][1]
     
-    info(logger, "Running tests on ", length(test_files), " toy datasets with MinSup=", min_sup*100, "%")
+    info(logger, "Executing tests on ", length(test_files), " datasets with MinSup=", min_sup*100, "% and Evaluate correctness in results with SPMF")
     
     passed = 0
     total = length(test_files)
@@ -297,7 +297,7 @@ function run_unitTest(config, logger)
             
             missing_in_julia = length(setdiff(spmf_res, julia_res))
             missing_in_spmf = length(setdiff(julia_res, spmf_res))
-            info(logger, "Evaluate Julia result and SPMF result")
+            # info(logger, "Evaluate Julia result and SPMF result")
             if missing_in_julia == 0 && missing_in_spmf == 0
                 success(logger, "✓ Test ", i, " Passed (", length(julia_res), " itemsets)")
                 passed += 1
