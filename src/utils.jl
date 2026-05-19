@@ -99,7 +99,26 @@ function execute_spmf(config, data_path, output_path, min_sup_ratio)
         end
     end
 
-    command = `$(config["java_path"]) -jar $(config["spmf_path"]) run FPGrowth_itemsets $(actual_data_path) $(output_path) $min_sup_ratio`
+    # Tự động phát hiện và fallback thông minh đường dẫn spmf.jar
+    spmf_jar = get(config, "spmf_path", "spmf.jar")
+    if !isfile(spmf_jar)
+        fallback_paths = [
+            joinpath("src", "algorithm", "fpgrowth_spmf.jar"),
+            joinpath("..", "src", "algorithm", "fpgrowth_spmf.jar"),
+            joinpath("algorithm", "fpgrowth_spmf.jar"),
+            "fpgrowth_spmf.jar",
+            "spmf.jar",
+            joinpath("..", "spmf.jar")
+        ]
+        for path in fallback_paths
+            if isfile(path)
+                spmf_jar = path
+                break
+            end
+        end
+    end
+
+    command = `$(config["java_path"]) -jar $(spmf_jar) run FPGrowth_itemsets $(actual_data_path) $(output_path) $min_sup_ratio`
     
     # Capture both stdout and stderr
     out = IOBuffer()

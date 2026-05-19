@@ -59,7 +59,7 @@ function _run_algo(sym::Symbol, transactions, min_sup_abs::Int, config, out_path
     end
 end
 
-_label(sym::Symbol) = sym == :base ? "FP-Growth Basic" : sym == :opt ? "FP-Growth Optimized" : "SPMF Java"
+_label(sym::Symbol) = sym == :base ? "FP-Growth Baseline" : sym == :opt ? "FP-Growth Optimized" : "FP-Growth SPMF"
 _color(sym::Symbol) = sym == :base ? :gray : sym == :opt ? :blue : :green
 
 # ========================
@@ -80,13 +80,7 @@ eval_correctness(CONFIG, logger, methods=[:base, :opt])   # Basic vs Optimized
 eval_correctness(CONFIG, logger, methods=[:opt,  :spmf])  # Optimized vs SPMF
 ```
 """
-function eval_correctness(config, logger; methods::Vector{Symbol}=[:base, :spmf], min_sup=nothing, method=nothing, algo=nothing)
-    # Backward compatibility: nếu truyền algo= hoặc method= (hàm Julia cũ)
-    legacy_algo = algo !== nothing ? algo : method
-    if legacy_algo !== nothing
-        return _eval_correctness_legacy(config, logger, legacy_algo)
-    end
-
+function eval_correctness(config, logger; methods::Vector{Symbol}=[:base, :spmf], min_sup=nothing)
     length(methods) == 2 || error("methods phải có đúng 2 phần tử, ví dụ: [:base, :spmf]")
     sym_a, sym_b = methods[1], methods[2]
 
@@ -135,74 +129,48 @@ function eval_correctness(config, logger; methods::Vector{Symbol}=[:base, :spmf]
     end
     println()
 
-    return Dict(
-        "$(_label(sym_a))_Count" => length(res_a),
-        "$(_label(sym_b))_Count" => length(res_b),
-        "Missing_in_A" => missing_in_a,
-        "Missing_in_B" => missing_in_b,
-        "Match_Rate"   => match_rate,
-        "Label_A"      => _label(sym_a),
-        "Label_B"      => _label(sym_b)
+    col_a = _label(sym_a)
+    col_b = _label(sym_b)
+    
+    results_df = DataFrame(
+        MinSup = [Min_Sup],
+        Dataset = [basename(path)],
+        MatchRate = [match_rate]
     )
+    
+    # Ghép nhãn phương thức trực tiếp vào tên cột để tối ưu hóa hiển thị và truy xuất dữ liệu
+    results_df[!, Symbol("Count_", col_a)] = [length(res_a)]
+    results_df[!, Symbol("Count_", col_b)] = [length(res_b)]
+    results_df[!, Symbol("Missing_", col_a)] = [missing_in_a]
+    results_df[!, Symbol("Missing_", col_b)] = [missing_in_b]
+    
+    return results_df
 end
 
-# Backward-compatible legacy version (khi truyền algo= hàm Julia)
-function _eval_correctness_legacy(config, logger, algo)
-    phase(logger, "CORRECTNESS")
-    info(logger, "Verify accuracy at the threshold MinSup=", config["Minimum Support"] * 100, "%")
-    transactions = FPGrowth.read_spmf(config["dataset_path"])
-    min_sup_abs = ceil(Int, config["Minimum Support"] * length(transactions))
-    process(logger, "Executing Julia...")
-    julia_result = algo(transactions, min_sup_abs)
-    FPGrowth.write_spmf(config["proposed_result"], julia_result)
-    process(logger, "Executing SPMF...")
-    Utils.execute_spmf(config, config["dataset_path"], config["baseline_result"], config["Minimum Support"])
-    my_res   = Utils.parse_output(config["proposed_result"])
-    spmf_res = Utils.parse_output(config["baseline_result"])
-    missing_in_mine = length(setdiff(spmf_res, my_res))
-    missing_in_spmf = length(setdiff(my_res, spmf_res))
-    if missing_in_mine == 0 && missing_in_spmf == 0
-        info(logger, "Matching #SUP → TRUE (100% Exact Match)")
-    else
-        info(logger, "Matching #SUP → FALSE | Missing in Julia: ", missing_in_mine, " | Missing in SPMF: ", missing_in_spmf)
-    end
-    println()
-    info(logger, "Support Match Samples (Top 5):")
-    count = 0
-    for item in intersect(my_res, spmf_res)
-        parts = split(item, " - ")
-        length(parts) == 2 || continue
-        metric(logger, "Itemset: { ", parts[1], " } | Support: ", parts[2], ": Match ✓")
-        count += 1; count >= 5 && break
-    end
-    println()
-    return Dict("Julia_Count" => length(my_res), "SPMF_Count" => length(spmf_res),
-                "Missing_in_Julia" => missing_in_mine, "Missing_in_SPMF" => missing_in_spmf)
-end
 
-function vis_correctness(res::Dict, logger)
+function vis_correctness(df::DataFrame, logger)
     phase(logger, "Visualize")
 
-    # Hỗ trợ cả format mới (Label_A/B) và cũ (Julia_Count/SPMF_Count)
-    if haskey(res, "Label_A")
-        label_a = res["Label_A"]; label_b = res["Label_B"]
-        count_a = res["$(label_a)_Count"]; count_b = res["$(label_b)_Count"]
-        if res["Missing_in_A"] == 0 && res["Missing_in_B"] == 0
-            success(logger, "Correct (", count_a, " itemsets matched 100%)")
-        else
-            fail(logger, "Incorrect: Match Rate = ", round(res["Match_Rate"], digits=2), "%")
-        end
-        categories = [label_a, label_b]
-        counts     = [count_a, count_b]
+    cols = string.(names(df))
+    count_cols = filter(c -> startswith(c, "Count_"), cols)
+    length(count_cols) == 2 || error("DataFrame kết quả phải chứa đúng 2 cột bắt đầu bằng 'Count_'")
+
+    label_a = replace(count_cols[1], "Count_" => "")
+    label_b = replace(count_cols[2], "Count_" => "")
+
+    count_a   = df[1, Symbol("Count_",   label_a)]
+    count_b   = df[1, Symbol("Count_",   label_b)]
+    missing_a = df[1, Symbol("Missing_", label_a)]
+    missing_b = df[1, Symbol("Missing_", label_b)]
+    match_rate = df[1, :MatchRate]
+
+    if missing_a == 0 && missing_b == 0
+        success(logger, "Correct (", count_a, " itemsets matched 100%)")
     else
-        if res["Missing_in_Julia"] == 0 && res["Missing_in_SPMF"] == 0
-            success(logger, "Correct (", res["Julia_Count"], " frequent itemsets)")
-        else
-            fail(logger, "Incorrect: Missing in Julia: ", res["Missing_in_Julia"], " | Missing in SPMF: ", res["Missing_in_SPMF"])
-        end
-        categories = ["Julia From Scratch", "SPMF Built-in"]
-        counts     = [res["Julia_Count"], res["SPMF_Count"]]
+        fail(logger, "Incorrect: Match Rate = ", round(match_rate, digits=2), "%")
     end
+    categories = [label_a, label_b]
+    counts     = [count_a, count_b]
 
     p = bar(categories, counts, title="Correctness Evaluation", ylabel="Frequent Itemsets",
             legend=false, color=[:blue, :green], bar_width=0.4)
@@ -230,13 +198,7 @@ eval_performance(CONFIG, logger, methods=[:base, :opt])   # Cơ bản vs Tối �
 eval_performance(CONFIG, logger, methods=[:opt,  :spmf])  # Tối ưu vs SPMF
 ```
 """
-function eval_performance(config, logger; methods::Vector{Symbol}=[:opt, :spmf], method=nothing, algo=nothing)
-    # Backward compatibility: nếu truyền algo= hoặc method= (hàm Julia cũ)
-    legacy_algo = algo !== nothing ? algo : method
-    if legacy_algo !== nothing
-        return _eval_performance_legacy(config, logger, legacy_algo)
-    end
-
+function eval_performance(config, logger; methods::Vector{Symbol}=[:opt, :spmf])
     length(methods) == 2 || error("methods phải có đúng 2 phần tử, ví dụ: [:base, :spmf]")
     sym_a, sym_b = methods[1], methods[2]
     
@@ -290,9 +252,18 @@ function eval_performance(config, logger; methods::Vector{Symbol}=[:opt, :spmf],
     end
     
     rm(spmf_out, force=true)
-    # Lưu metadata nhãn vào cột riêng (không rename cột TimeA/MemA để tránh lỗi ký tự đặc biệt)
-    results_df[!, :_label_a] .= _label(sym_a)
-    results_df[!, :_label_b] .= _label(sym_b)
+    
+    col_a = _label(sym_a)
+    col_b = _label(sym_b)
+    
+    # Ghép nhãn phương thức trực tiếp vào tên cột để tối ưu hóa DataFrame
+    rename!(results_df, 
+        :TimeA => Symbol("Time_", col_a),
+        :MemA  => Symbol("Memory_", col_a),
+        :TimeB => Symbol("Time_", col_b),
+        :MemB  => Symbol("Memory_", col_b)
+    )
+    
     if haskey(config, "performance_result")
         CSV.write(config["performance_result"], results_df)
         success(logger, "Saved at ", config["performance_result"])
@@ -343,40 +314,58 @@ function vis_performance(df::DataFrame, logger)
     p_memory = nothing
     p_legend = nothing
 
-    # Phát hiện format: mới (có _label_a) hoặc cũ (có JuliaTime)
-    if hasproperty(df_sorted, :_label_a)
-        # === Format mới: TimeA/MemA/TimeB/MemB + label metadata ===
-        label_a = df_sorted[1, :_label_a]
-        label_b = df_sorted[1, :_label_b]
+    # Phát hiện format: mới (có các cột bắt đầu bằng "Time_") hoặc cũ (có JuliaTime)
+    cols = string.(names(df_sorted))
+    time_cols = filter(c -> startswith(c, "Time_"), cols)
+    
+    if !isempty(time_cols) || hasproperty(df_sorted, :_label_a)
+        # Lấy label từ cột "Time_..." hoặc fallback từ _label_a/_label_b nếu có
+        if !isempty(time_cols)
+            label_a = replace(time_cols[1], "Time_" => "")
+            label_b = replace(time_cols[2], "Time_" => "")
+        else
+            label_a = df_sorted[1, :_label_a]
+            label_b = df_sorted[1, :_label_b]
+        end
         
         color_a = label_a == "FP-Growth Optimized" ? :blue  :
-                  label_a == "SPMF Java"            ? :green : :gray
+                  (label_a == "FP-Growth SPMF" || label_a == "SPMF Java") ? :green : :gray
         color_b = label_b == "FP-Growth Optimized" ? :blue  :
-                  label_b == "SPMF Java"            ? :green : :gray
+                  (label_b == "FP-Growth SPMF" || label_b == "SPMF Java") ? :green : :gray
+        
+        # Phát hiện tên cột động để tương thích với cấu trúc DataFrame mới
+        col_time_a = hasproperty(df_sorted, Symbol("Time_", label_a)) ? Symbol("Time_", label_a) : (hasproperty(df_sorted, :TimeA) ? :TimeA : Symbol("Time_", label_a))
+        col_mem_a  = hasproperty(df_sorted, Symbol("Memory_", label_a)) ? Symbol("Memory_", label_a) : (hasproperty(df_sorted, Symbol("Mem_", label_a)) ? Symbol("Mem_", label_a) : (hasproperty(df_sorted, :MemA) ? :MemA : Symbol("Memory_", label_a)))
+        col_time_b = hasproperty(df_sorted, Symbol("Time_", label_b)) ? Symbol("Time_", label_b) : (hasproperty(df_sorted, :TimeB) ? :TimeB : Symbol("Time_", label_b))
+        col_mem_b  = hasproperty(df_sorted, Symbol("Memory_", label_b)) ? Symbol("Memory_", label_b) : (hasproperty(df_sorted, Symbol("Mem_", label_b)) ? Symbol("Mem_", label_b) : (hasproperty(df_sorted, :MemB) ? :MemB : Symbol("Memory_", label_b)))
+        
+        # Định nghĩa các marker động dựa trên loại thuật toán
+        marker_a = label_a == "FP-Growth Baseline" ? :xcross : (label_a == "FP-Growth Optimized" ? :circle : :square)
+        marker_b = label_b == "FP-Growth Baseline" ? :xcross : (label_b == "FP-Growth Optimized" ? :circle : :square)
         
         # 1. Vẽ đồ thị Time (không hiện legend)
-        p_time = plot(x_vals, df_sorted.TimeA,
-                      label="", marker=:circle, linewidth=2.5,
+        p_time = plot(x_vals, df_sorted[!, col_time_a],
+                      label="", marker=marker_a, linewidth=2.5,
                       color=color_a, linestyle=:dash,
                       title="Execution time", xlabel="MinSup (%)", ylabel="Second (s)", legend=false)
-        plot!(p_time, x_vals, df_sorted.TimeB,
-              label="", marker=:square, linewidth=2,
+        plot!(p_time, x_vals, df_sorted[!, col_time_b],
+              label="", marker=marker_b, linewidth=2,
               color=color_b, linestyle=:solid)
         
         # 2. Vẽ đồ thị Memory (không hiện legend)
-        p_memory = plot(x_vals, df_sorted.MemA,
-                        label="", marker=:circle, linewidth=2.5,
+        p_memory = plot(x_vals, df_sorted[!, col_mem_a],
+                        label="", marker=marker_a, linewidth=2.5,
                         color=color_a, linestyle=:dash,
                         title="Memory consumption", xlabel="MinSup (%)", ylabel="Megabytes (MB)", legend=false)
-        plot!(p_memory, x_vals, df_sorted.MemB,
-              label="", marker=:square, linewidth=2,
+        plot!(p_memory, x_vals, df_sorted[!, col_mem_b],
+              label="", marker=marker_b, linewidth=2,
               color=color_b, linestyle=:solid)
 
         # 3. Vẽ dummy plot chứa Legend nằm ngang căn giữa (Khớp màu/marker đồ thị chính)
         p_legend = plot([0 0], showaxis=false, grid=false, 
                         label=[label_a label_b], 
                         color=[color_a color_b],
-                        marker=[:circle :square],
+                        marker=[marker_a marker_b],
                         linestyle=[:dash :solid],
                         linewidth=2.5,
                         legend=:top, 

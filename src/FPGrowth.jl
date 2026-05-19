@@ -1,7 +1,7 @@
 module FPGrowth
 
 include("structures.jl")
-include("algorithm/fpgrowth.jl")
+include("algorithm/fpgrowth_base.jl")
 include("algorithm/fpgrowth_opt.jl")
 include("utils.jl")
 

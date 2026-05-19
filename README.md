@@ -77,10 +77,10 @@
   export PATH=$JAVA_HOME/bin:$PATH
   ```
 * **Linux (Ubuntu/Debian)**: `sudo apt install openjdk-11-jdk`.
-* Sau khi cài, sao chép `spmf.jar` (đã có trong repository) vào thư mục gốc dự án.
+* Thư viện `fpgrowth_spmf.jar` đã được đặt sẵn trong thư mục `src/algorithm/`.
 * Kiểm tra tích hợp:
   ```bash
-  java -jar spmf.jar
+  java -jar src/algorithm/fpgrowth_spmf.jar
   ```
   Nếu xuất hiện phiên bản SPMF → chuẩn bị xong.
 
@@ -107,17 +107,18 @@ Lab02-Data-Mining/
 │
 ├── src/                        # Chứa 100% Mã nguồn (Source Code) của dự án.
 │   ├── algorithm/
-│   │   └── fpgrowth.jl         # Thuật toán cốt lõi: Khởi tạo FP-Tree và hàm đệ quy _mine_tree! siêu tối ưu bộ nhớ.
-│   ├── eval_utils.jl           # Các hàm Hỗ trợ Đánh giá: Gọi ngầm SPMF (Java) và parse kết quả so khớp.
-│   ├── logger.jl               # Module OOP tự viết: In log màu sắc chuyên nghiệp ra Terminal/Notebook.
-│   ├── structures.jl           # Cấu trúc dữ liệu: Định nghĩa FPNode (Vector Lazy) và HeaderTable.
-│   ├── utils.jl                # Các hàm tiện ích: Đọc/ghi dữ liệu chuẩn SPMF (.dat/.txt).
+│   │   ├── fpgrowth_base.jl    # Thuật toán FP-Growth cơ bản (Baseline).
+│   │   ├── fpgrowth_opt.jl     # Thuật toán FP-Growth tối ưu hóa (Optimized).
+│   │   └── fpgrowth_spmf.jar   # Bản SPMF Java chính thức dùng để đối chuẩn hiệu năng.
+│   ├── eval.jl                 # Kịch bản thực nghiệm, so sánh độ chính xác và vẽ biểu đồ.
+│   ├── logger.jl               # Module OOP tự viết: In log màu sắc chuyên nghiệp.
+│   ├── structures.jl           # Cấu trúc dữ liệu: FPNode và HeaderTable.
+│   ├── utils.jl                # Tiện ích: Đọc/ghi dữ liệu chuẩn SPMF và hỗ trợ gọi JVM.
 │   └── FPGrowth.jl             # Module chính đóng gói toàn bộ code thuật toán.
 │
-├── .cursorrules                # File cấu hình quy tắc và context dành riêng cho AI (Cursor IDE).
-├── .gitignore                  # Chỉ định các tệp/thư mục Git không được phép theo dõi (ví dụ: data/, results/).
-├── Manifest.toml               # File khóa (Lockfile): Ghi chính xác version từng thư viện đảm bảo tái lập 100%.
-├── Project.toml                # File quản lý môi trường: Liệt kê các dependencies chính (tương tự package.json).
-├── spmf.jar                    # Thư viện SPMF chính thức bằng Java dùng để đánh giá chéo.
+├── .cursorrules                # File cấu hình quy tắc dành riêng cho AI.
+├── .gitignore                  # Chỉ định các tệp/thư mục Git bỏ qua.
+├── Manifest.toml               # Ghi chính xác các gói dependencies để tái lập.
+├── Project.toml                # File quản lý môi trường và thư viện liên kết.
 └── README.md                   # Tệp hướng dẫn này.
 ```
