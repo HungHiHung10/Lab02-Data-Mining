@@ -172,10 +172,36 @@ end
 end
 
 function _is_single_path(header_table::Structures.HeaderTable{T}) where T
-    for item in keys(header_table)
-        if header_table[item].head !== header_table[item].tail return false end
+    nodes = IdDict{Structures.FPNode{T}, Bool}()
+    for entry in values(header_table)
+        if entry.head === nothing || entry.head !== entry.tail
+            return false
+        end
+        nodes[entry.head] = true
     end
-    return true
+
+    if isempty(nodes)
+        return false
+    end
+
+    root_children = 0
+    child_counts = IdDict{Structures.FPNode{T}, Int}()
+    for node in keys(nodes)
+        parent = node.parent
+        if parent === nothing
+            return false
+        elseif parent.parent === nothing
+            root_children += 1
+        elseif haskey(nodes, parent)
+            child_counts[parent] = get(child_counts, parent, 0) + 1
+            if child_counts[parent] > 1
+                return false
+            end
+        else
+            return false
+        end
+    end
+    return root_children == 1
 end
 
 function _generate_combinations_fast!(items::Vector{T}, header_table::Structures.HeaderTable{T}, prefix::Vector{T}, results::Dict{Vector{T}, Int}) where T
