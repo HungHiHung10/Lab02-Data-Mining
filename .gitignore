@@ -44,4 +44,6 @@ results/*
 .cursorrules
 docs/CSC14004 - Data Mining - P2 - Updated.txt
 tks.ipynb
+test_maxrss_dataset.jl
+verify_measurement.jl
 # Notice: Project.toml & Manifest.toml are kept tracking

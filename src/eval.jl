@@ -16,6 +16,74 @@ using Plots
 using Plots.PlotMeasures
 using ProgressMeter
 using Statistics
+using Distributed
+
+
+# ISOLATED MEMORY MEASUREMENT
+# ========================
+function _run_isolated(algo_sym::Symbol, transactions, min_sup_abs::Int, n_runs::Int=1)
+    w = addprocs(1)[1]
+    
+    # 1. Kích hoạt môi trường + warm-up JIT trong Worker, đo baseline RSS
+    #    Đo m0 SAU khi warm-up để loại overhead package loading & JIT compilation.
+    m0_worker = remotecall_fetch(w) do
+        Core.eval(Main, quote
+            using Pkg
+            redirect_stdout(devnull) do
+                Pkg.activate($(abspath(joinpath(@__DIR__, ".."))))
+            end
+            using FPGrowth
+
+            # Warm up JIT inside worker so it doesn't pollute measurement
+            dummy_txs = [[1, 2], [1, 3], [1, 2, 3]]
+            FPGrowth.fpgrowth(dummy_txs, 1)
+            FPGrowth.fpgrowth_opt(dummy_txs, 1)
+        end)
+
+        GC.gc()
+        return Sys.maxrss()  # baseline: packages + JIT đã ổn định
+    end
+
+    # 2. Gửi dữ liệu sang worker, đo Median Time và Peak RSS delta
+    #    Sys.maxrss() = Peak Working Set của OS process từ đầu đến nay (high-water mark).
+    #    Trong fresh worker, m1 - m0 = lượng RAM THỰC SỰ thuật toán cần thêm vào.
+    #    Đây là metric gần nhất với "Max memory usage" mà SPMF báo cáo
+    #    (SPMF dùng: max(totalMemory - freeMemory) trong suốt quá trình chạy).
+    t_median, m1_worker, res_algo = remotecall_fetch(w, algo_sym, transactions, min_sup_abs, n_runs) do sym, txs, ms, runs
+        times = Float64[]
+        res = nothing
+        for _ in 1:runs
+            GC.gc()
+            t0 = time_ns()
+            if sym == :opt
+                res = Main.FPGrowth.fpgrowth_opt(txs, ms)
+            else
+                res = Main.FPGrowth.fpgrowth(txs, ms)
+            end
+            t1 = time_ns()
+            push!(times, (t1 - t0) / 1e9)
+        end
+
+        # Đo ngay sau khi thuật toán chạy xong, TRƯỚC khi GC.gc()
+        # maxrss không giảm sau GC → đây vẫn là peak, nhưng đo trước GC rõ nghĩa hơn
+        m1 = Sys.maxrss()
+
+        sort!(times)
+        mid = div(length(times) + 1, 2)
+        med = isodd(length(times)) ? times[mid] : (times[mid] + times[mid+1]) / 2.0
+
+        return med, m1, res
+    end
+
+    rmprocs(w)
+
+    # Peak Memory của thuật toán = RSS tại đỉnh − RSS baseline (sau warm-up)
+    # Không dùng fallback summarysize vì nó chỉ đo Dict kết quả, không phải FP-Tree
+    mem_used = max(0.0, (m1_worker - m0_worker) / (1024^2))
+
+    return t_median, mem_used, res_algo
+end
+
 
 # ========================
 # HELPERS: RUN & PARSE
@@ -28,28 +96,12 @@ Chạy một trong 3 phương pháp và trả về (Set{String} kết quả, th�
 - sym = :opt    → fpgrowth_opt tối ưu
 - sym = :spmf   → SPMF Java baseline
 """
-function _run_algo(sym::Symbol, transactions, min_sup_abs::Int, config, out_path::String, Min_Sup::Float64)
+function _run_algo(sym::Symbol, transactions, min_sup_abs::Int, config, out_path::String, Min_Sup::Float64, n_runs::Int=1)
     GC.gc()
-    if sym == :base
-        mem = 0; t = 0.0; t0 = time_ns(); t1 = time_ns()
-        mem = @allocated begin
-            t0 = time_ns()
-            res = FPGrowth.fpgrowth(transactions, min_sup_abs)
-            t1 = time_ns()
-        end
-        t = (t1 - t0) / 1e9
+    if sym == :base || sym == :opt
+        t_sec, mem_peak, res = _run_isolated(sym, transactions, min_sup_abs, n_runs)
         res_set = Set{String}(join(sort(k), " ") * " - " * string(v) for (k, v) in res)
-        return res_set, t, mem / (1024^2)
-    elseif sym == :opt
-        mem = 0; t = 0.0; t0 = time_ns(); t1 = time_ns()
-        mem = @allocated begin
-            t0 = time_ns()
-            res = FPGrowth.fpgrowth_opt(transactions, min_sup_abs)
-            t1 = time_ns()
-        end
-        t = (t1 - t0) / 1e9
-        res_set = Set{String}(join(sort(k), " ") * " - " * string(v) for (k, v) in res)
-        return res_set, t, mem / (1024^2)
+        return res_set, t_sec, mem_peak
     elseif sym == :spmf
         t, mem_mb = Utils.execute_spmf(config, config["dataset_path"], out_path, Min_Sup)
         res_set = Utils.parse_output(out_path)
@@ -226,24 +278,14 @@ function eval_performance(config, logger; methods::Vector{Symbol}=[:opt, :spmf])
         process(logger, "MinSup = ", Min_Sup * 100, "% ...")
         
         # --- Phương pháp A ---
-        times_a = Float64[]; mems_a = Float64[]; itemsets_a = 0
         n_runs_a = (sym_a == :spmf) ? 1 : N_RUNS
-        for _ in 1:n_runs_a
-            res_set, t, mem = _run_algo(sym_a, transactions, min_sup_abs, config, spmf_out, Min_Sup)
-            itemsets_a = length(res_set)
-            push!(times_a, t); push!(mems_a, mem)
-        end
-        ta = median(times_a); ma = median(mems_a)
+        res_set_a, ta, ma = _run_algo(sym_a, transactions, min_sup_abs, config, spmf_out, Min_Sup, n_runs_a)
+        itemsets_a = length(res_set_a)
         
         # --- Phương pháp B ---
-        times_b = Float64[]; mems_b = Float64[]; itemsets_b = 0
         n_runs_b = (sym_b == :spmf) ? 1 : N_RUNS
-        for _ in 1:n_runs_b
-            res_set, t, mem = _run_algo(sym_b, transactions, min_sup_abs, config, spmf_out, Min_Sup)
-            itemsets_b = length(res_set)
-            push!(times_b, t); push!(mems_b, mem)
-        end
-        tb = median(times_b); mb = median(mems_b)
+        res_set_b, tb, mb = _run_algo(sym_b, transactions, min_sup_abs, config, spmf_out, Min_Sup, n_runs_b)
+        itemsets_b = length(res_set_b)
         
         metric(logger, "$(_label(sym_a)) → Time: ", round(ta,digits=3), "s | Memory: ", round(ma,digits=2), "MB | Itemsets: ", itemsets_a)
         metric(logger, "$(_label(sym_b)) → Time: ", round(tb,digits=3), "s | Memory: ", round(mb,digits=2), "MB | Itemsets: ", itemsets_b)
@@ -283,17 +325,11 @@ function _eval_performance_legacy(config, logger, algo)
     results_df = DataFrame(MinSup=Float64[], Itemsets=Int[], JuliaTime=Float64[], JuliaMemory=Float64[], SPMFTime=Float64[], SPMFMemory=Float64[])
     @showprogress "Benchmarking... " for min_sup_ratio in config["min_sups"]
         min_sup_abs = ceil(Int, min_sup_ratio * total_txs)
-        julia_times = Float64[]; julia_memories = Float64[]; itemset_count = 0
-        for _ in 1:N_RUNS
-            GC.gc()
-            mem_bytes = @allocated begin
-                t0 = time_ns()
-                fi = algo(transactions, min_sup_abs)
-                t1 = time_ns()
-                itemset_count = length(fi)
-            end
-            push!(julia_times, (t1-t0)/1e9); push!(julia_memories, mem_bytes/(1024^2))
-        end
+        algo_sym = algo === FPGrowth.fpgrowth_opt ? :opt : :base
+        t_sec, mem_mb, res = _run_isolated(algo_sym, transactions, min_sup_abs, N_RUNS)
+        itemset_count = length(res)
+        julia_times = [t_sec]; julia_memories = [mem_mb]
+        
         spmf_time, spmf_memory = Utils.execute_spmf(config, config["dataset_path"], config["baseline_result"], min_sup_ratio)
         metric(logger, "Julia → Time: ", round(median(julia_times),digits=3), "s | Mem: ", round(median(julia_memories),digits=2), "MB")
         metric(logger, "SPMF  → Time: ", round(spmf_time,digits=3), "s | Mem: ", round(spmf_memory,digits=2), "MB")
@@ -461,12 +497,10 @@ function eval_scalability(config, logger; algo=FPGrowth.fpgrowth)
         
         min_sup_abs = ceil(Int, fixed_minsup * num_tx)
         
-        # Julia
-        GC.gc() 
-        time_before = time_ns()
-        algo(sliced_txs, min_sup_abs)
-        time_after = time_ns()
-        julia_time = (time_after - time_before) / 1e9
+        # Julia – dùng _run_isolated để đồng nhất với eval_performance
+        # (worker riêng biệt, GC.gc() sạch, không bị nhiễu bởi các vòng lặp trước)
+        algo_sym_sc = algo === FPGrowth.fpgrowth_opt ? :opt : :base
+        julia_time, _, _ = _run_isolated(algo_sym_sc, sliced_txs, min_sup_abs, 1)
         
         # SPMF
         spmf_time, _ = Utils.execute_spmf(config, temp_data_path, config["baseline_result"], fixed_minsup)
@@ -695,13 +729,8 @@ function eval_transaction_length(config, logger; algo=FPGrowth.fpgrowth)
         
         # Julia
         GC.gc()
-        mem_bytes = @allocated begin
-            t0 = time_ns()
-            algo(transactions, min_sup_abs)
-            t1 = time_ns()
-        end
-        julia_time = (t1 - t0) / 1e9
-        julia_mem = mem_bytes / (1024^2) # MB
+        algo_sym = algo === FPGrowth.fpgrowth_opt ? :opt : :base
+        julia_time, julia_mem, _ = _run_isolated(algo_sym, transactions, min_sup_abs)
         
         # SPMF
         spmf_time, spmf_mem = Utils.execute_spmf(config, temp_data_path, config["baseline_result"], min_sup)
