@@ -38,3 +38,49 @@ function parse_written_results(path::AbstractString)
     end
     return parsed
 end
+
+function java_executable()
+    configured_path = get(ENV, "JAVA_PATH", "")
+    if !isempty(configured_path)
+        return configured_path
+    end
+
+    windows_java = raw"C:\Program Files\Microsoft\jdk-21.0.10.7-hotspot\bin\java.exe"
+    if Sys.iswindows() && isfile(windows_java)
+        return windows_java
+    end
+
+    java = Sys.which("java")
+    java === nothing && error("Java executable not found. Install JDK or set ENV[\"JAVA_PATH\"].")
+    return java
+end
+
+function spmf_jar_path()
+    path = joinpath(@__DIR__, "..", "src", "algorithm", "fpgrowth_spmf.jar")
+    isfile(path) || error("SPMF jar not found at $path")
+    return path
+end
+
+function spmf_reference(input_path::AbstractString, output_path::AbstractString, minsup_ratio::Real)
+    mkpath(dirname(output_path))
+    rm(output_path, force=true)
+
+    cmd = Cmd([
+        java_executable(),
+        "-jar",
+        spmf_jar_path(),
+        "run",
+        "FPGrowth_itemsets",
+        input_path,
+        output_path,
+        string(minsup_ratio),
+    ])
+
+    read(ignorestatus(cmd), String)
+
+    if !isfile(output_path) || filesize(output_path) == 0
+        error("SPMF did not create a non-empty output file: $output_path")
+    end
+
+    return parse_written_results(output_path)
+end
