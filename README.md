@@ -38,7 +38,7 @@ Output:
 | Thành phần | Phiên bản | Vai trò |
 |---|---:|---|
 | Julia | >= 1.9 | Ngôn ngữ cài đặt chính |
-| Java | >= 8 | Chạy SPMF Java baseline |
+| Java | Microsoft OpenJDK 21 | Chạy SPMF Java baseline |
 | Jupyter Notebook | tùy chọn | Chạy notebook thực nghiệm |
 | IJulia | theo `Project.toml` | Julia kernel cho notebook |
 
@@ -105,17 +105,29 @@ Kiểm tra Java:
 java -version
 ```
 
-Nếu chưa có Java, cài Temurin JDK:
+Nếu chưa có Java, cài **Microsoft OpenJDK 21** để khớp với cấu hình benchmark trong notebook:
 
 ```cmd
-winget install EclipseAdoptium.Temurin.17.JDK
+winget install Microsoft.OpenJDK.21
 ```
 
-Đóng CMD, mở lại CMD mới rồi kiểm tra SPMF:
+Đóng CMD, mở lại CMD mới rồi kiểm tra đúng đường dẫn Java:
+
+```cmd
+"C:\Program Files\Microsoft\jdk-21.0.10.7-hotspot\bin\java.exe" -version
+```
+
+Trong các notebook benchmark, cấu hình Java nên dùng:
+
+```julia
+"java_path" => "C:/Program Files/Microsoft/jdk-21.0.10.7-hotspot/bin/java.exe"
+```
+
+Sau đó kiểm tra SPMF:
 
 ```cmd
 cd /d D:\DataMining\Lab02-Data-Mining
-java -jar src\algorithm\fpgrowth_spmf.jar
+"C:\Program Files\Microsoft\jdk-21.0.10.7-hotspot\bin\java.exe" -jar src\algorithm\fpgrowth_spmf.jar
 ```
 
 ### 3.5. Kiểm Tra Setup Nhanh
@@ -297,7 +309,7 @@ src/algorithm/fpgrowth_spmf.jar
 Ví dụ chạy SPMF trực tiếp:
 
 ```cmd
-java -jar src/algorithm/fpgrowth_spmf.jar run FPGrowth_itemsets data/toy/test1.txt results/spmf_test1.txt 0.4
+"C:\Program Files\Microsoft\jdk-21.0.10.7-hotspot\bin\java.exe" -jar src\algorithm\fpgrowth_spmf.jar run FPGrowth_itemsets data\toy\test1.txt results\spmf_test1.txt 0.4
 ```
 
 Trong code, hàm `Utils.execute_spmf(...)` hỗ trợ gọi SPMF và parse thời gian/bộ nhớ từ output.
