@@ -357,13 +357,11 @@ Lab02-Data-Mining/
 |   |   |-- Groceries_dataset.csv
 |-- notebooks/
 |   |-- 01_evaluate.ipynb
-|   |-- 02_bechmarking.ipynb
+|   |-- 02_benchmarking.ipynb
 |   |-- 03_employ.ipynb
 |-- results/
 |-- docs/
-|   |-- Requirement.pdf
-|   |-- Requirement.txt
-|   |-- References.pdf
+|   |-- Report.pdf
 ```
 
 Ghi chú trước khi nộp: đề bài yêu cầu báo cáo chính thức nằm ở `docs/Report.pdf`.
@@ -416,7 +414,7 @@ Các notebook chính:
 | Notebook | Nội dung |
 |---|---|
 | `notebooks/01_evaluate.ipynb` | Kiểm tra correctness, chạy toy datasets, đối chiếu SPMF |
-| `notebooks/02_bechmarking.ipynb` | Benchmark thời gian, bộ nhớ, số frequent itemsets, scalability |
+| `notebooks/02_benchmarking.ipynb` | Benchmark thời gian, bộ nhớ, số frequent itemsets, scalability |
 | `notebooks/03_employ.ipynb` | Ứng dụng thực tế với dữ liệu Groceries/market basket |
 
 Các kết quả trung gian và CSV được lưu trong `results/`.
@@ -454,7 +452,7 @@ julia --project=. main.jl --input data/toy/test1.txt --minsup 0.4 --output resul
 
 ```text
 01_evaluate.ipynb
-02_bechmarking.ipynb
+02_benchmarking.ipynb
 03_employ.ipynb
 ```
 
