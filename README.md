@@ -204,12 +204,6 @@ sudo apt install openjdk-21-jdk
 java -version
 ```
 
-Nếu hệ thống không có OpenJDK 21, dùng OpenJDK 17 cũng đủ để chạy SPMF:
-
-```bash
-sudo apt install openjdk-17-jdk
-```
-
 ### 4.3. Cài dependency project
 
 Từ thư mục project:
