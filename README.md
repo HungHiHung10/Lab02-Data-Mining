@@ -44,56 +44,107 @@ Output:
 
 Các package Julia được quản lý bằng `Project.toml` và `Manifest.toml`.
 
-## 3. Cài Đặt
+## 3. Cài Đặt Bằng Windows CMD
 
-Kích hoạt project và cài dependency:
+Các lệnh dưới đây dùng **Command Prompt (CMD)** trên Windows.
 
-```powershell
-julia --project=.
+### 3.1. Cài Julia bằng Juliaup
+
+Cài Juliaup:
+
+```cmd
+winget install julia -s msstore
 ```
 
-Trong Julia REPL:
+Đóng CMD, mở lại CMD mới rồi kiểm tra:
 
-```julia
-using Pkg
-Pkg.instantiate()
-```
-
-Hoặc chạy trực tiếp:
-
-```powershell
-julia --project=. -e "using Pkg; Pkg.instantiate()"
-```
-
-Kiểm tra Julia:
-
-```powershell
+```cmd
 julia --version
 ```
 
-Kiểm tra Java/SPMF:
+Nếu máy có nhiều phiên bản Julia, có thể dùng Juliaup để cài/chọn bản ổn định:
 
-```powershell
-java -jar src/algorithm/fpgrowth_spmf.jar
+```cmd
+juliaup add release
+juliaup default release
+julia --version
+```
+
+Project yêu cầu Julia `>= 1.9`. Julia mới hơn, ví dụ `1.10`, `1.11`, `1.12`, vẫn dùng được nếu package instantiate thành công.
+
+### 3.2. Mở đúng thư mục project
+
+```cmd
+cd /d D:\DataMining\Lab02-Data-Mining
+```
+
+Kiểm tra project files:
+
+```cmd
+dir Project.toml
+dir Manifest.toml
+```
+
+### 3.3. Cài dependency Julia cho project
+
+```cmd
+julia --project=. -e "using Pkg; Pkg.instantiate()"
+```
+
+Nếu muốn làm sạch trạng thái dependency hơn:
+
+```cmd
+julia --project=. -e "using Pkg; Pkg.resolve(); Pkg.instantiate(); Pkg.precompile()"
+```
+
+### 3.4. Cài Java để chạy SPMF
+
+Kiểm tra Java:
+
+```cmd
+java -version
+```
+
+Nếu chưa có Java, cài Temurin JDK:
+
+```cmd
+winget install EclipseAdoptium.Temurin.17.JDK
+```
+
+Đóng CMD, mở lại CMD mới rồi kiểm tra SPMF:
+
+```cmd
+cd /d D:\DataMining\Lab02-Data-Mining
+java -jar src\algorithm\fpgrowth_spmf.jar
+```
+
+### 3.5. Kiểm Tra Setup Nhanh
+
+Ba lệnh quan trọng nhất:
+
+```cmd
+cd /d D:\DataMining\Lab02-Data-Mining
+julia --project=. -e "using Pkg; Pkg.instantiate()"
+julia --project=. test\runtests.jl
 ```
 
 ## 4. Cách Chạy Thuật Toán
 
 Lệnh chính:
 
-```powershell
+```cmd
 julia --project=. main.jl --input <input-file> --minsup <minsup> --output <output-file>
 ```
 
 Ví dụ với tỷ lệ minsup:
 
-```powershell
+```cmd
 julia --project=. main.jl --input data/toy/test1.txt --minsup 0.4 --output results/result1.txt
 ```
 
 Ví dụ với minsup tuyệt đối:
 
-```powershell
+```cmd
 julia --project=. main.jl --input data/toy/test1.txt --minsup 3 --output results/result1_abs.txt
 ```
 
@@ -107,15 +158,9 @@ Tham số:
 
 ## 5. Chạy Kiểm Thử Tự Động
 
-Lệnh theo yêu cầu đề bài:
+Lệnh chạy test:
 
-```powershell
-julia --project test/runtests.jl
-```
-
-Lệnh tương đương, chỉ rõ project root:
-
-```powershell
+```cmd
 julia --project=. test/runtests.jl
 ```
 
@@ -251,7 +296,7 @@ src/algorithm/fpgrowth_spmf.jar
 
 Ví dụ chạy SPMF trực tiếp:
 
-```powershell
+```cmd
 java -jar src/algorithm/fpgrowth_spmf.jar run FPGrowth_itemsets data/toy/test1.txt results/spmf_test1.txt 0.4
 ```
 
@@ -261,12 +306,12 @@ Trong code, hàm `Utils.execute_spmf(...)` hỗ trợ gọi SPMF và parse thờ
 
 Quy trình khuyến nghị:
 
-1. Cài Julia và Java.
+1. Cài Julia bằng Juliaup và cài Java.
 2. Chạy `julia --project=. -e "using Pkg; Pkg.instantiate()"`.
-3. Chạy `julia --project test/runtests.jl`.
+3. Chạy `julia --project=. test/runtests.jl`.
 4. Chạy ví dụ CLI:
 
-```powershell
+```cmd
 julia --project=. main.jl --input data/toy/test1.txt --minsup 0.4 --output results/result1.txt
 ```
 
@@ -300,8 +345,8 @@ julia --project=. main.jl --input data/toy/test1.txt --minsup 0.4 --output resul
 - Nếu file nén vượt giới hạn dung lượng, đưa dataset lớn lên Google Drive và cập nhật link tại đây.
 - Trước khi nộp, chạy lại toàn bộ test:
 
-```powershell
-julia --project test/runtests.jl
+```cmd
+julia --project=. test/runtests.jl
 ```
 
 - Restart & Run All các notebook trước khi xuất báo cáo hoặc nộp notebook.
