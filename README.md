@@ -162,7 +162,108 @@ Khi mở các file trong `notebooks/`, chọn kernel:
 Julia Lab02 DataMining
 ```
 
-## 4. Cách Chạy Thuật Toán
+## 4. Cài Đặt Trên macOS/Linux
+
+Nếu chạy trên macOS hoặc Linux, vẫn dùng Juliaup để cài Julia, nhưng đường dẫn Java sẽ khác Windows.
+
+### 4.1. Cài Julia bằng Juliaup
+
+macOS/Linux:
+
+```bash
+curl -fsSL https://install.julialang.org | sh
+```
+
+Đóng terminal, mở lại terminal mới rồi kiểm tra:
+
+```bash
+julia --version
+```
+
+Nếu cần chọn bản ổn định:
+
+```bash
+juliaup add release
+juliaup default release
+```
+
+### 4.2. Cài Java
+
+macOS dùng Homebrew:
+
+```bash
+brew install openjdk@21
+java -version
+```
+
+Ubuntu/Debian:
+
+```bash
+sudo apt update
+sudo apt install openjdk-21-jdk
+java -version
+```
+
+Nếu hệ thống không có OpenJDK 21, dùng OpenJDK 17 cũng đủ để chạy SPMF:
+
+```bash
+sudo apt install openjdk-17-jdk
+```
+
+### 4.3. Cài dependency project
+
+Từ thư mục project:
+
+```bash
+cd /path/to/Lab02-Data-Mining
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
+```
+
+Chạy test:
+
+```bash
+julia --project=. test/runtests.jl
+```
+
+Chạy thuật toán:
+
+```bash
+julia --project=. main.jl --input data/toy/test1.txt --minsup 0.4 --output results/result1.txt
+```
+
+Chạy SPMF:
+
+```bash
+java -jar src/algorithm/fpgrowth_spmf.jar run FPGrowth_itemsets data/toy/test1.txt results/spmf_test1.txt 0.4
+```
+
+### 4.4. Lưu Ý `java_path` Trong Notebook
+
+Trên Windows, notebook đang dùng:
+
+```julia
+"java_path" => "C:/Program Files/Microsoft/jdk-21.0.10.7-hotspot/bin/java.exe"
+```
+
+Trên macOS/Linux, đổi thành:
+
+```julia
+"java_path" => "java"
+```
+
+Hoặc dùng đường dẫn lấy từ terminal:
+
+```bash
+which java
+```
+
+Ví dụ:
+
+```julia
+"java_path" => "/usr/bin/java"
+```
+
+## 5. Cách Chạy Thuật Toán
 
 Lệnh chính:
 
@@ -190,7 +291,7 @@ Tham số:
 | `--minsup`, `-s` | Ngưỡng support, dạng tỷ lệ `0 < s <= 1` hoặc số tuyệt đối `s > 1` |
 | `--output`, `-o` | Đường dẫn file kết quả |
 
-## 5. Chạy Kiểm Thử Tự Động
+## 6. Chạy Kiểm Thử Tự Động
 
 Lệnh chạy test:
 
@@ -216,7 +317,7 @@ Bộ test hiện có:
 - `test/test_helpers.jl`: hàm hỗ trợ chuẩn hóa itemset, brute-force reference và parse output.
 - `test/runtests.jl`: entrypoint chạy toàn bộ test.
 
-## 6. Cấu Trúc Thư Mục
+## 7. Cấu Trúc Thư Mục
 
 ```text
 Lab02-Data-Mining/
@@ -269,7 +370,7 @@ Ghi chú trước khi nộp: đề bài yêu cầu báo cáo chính thức nằm
 Nếu báo cáo được viết trong notebook hoặc công cụ khác, cần xuất thành PDF và đặt vào
 đúng đường dẫn này trước khi đóng gói.
 
-## 7. Mô Tả Mã Nguồn
+## 8. Mô Tả Mã Nguồn
 
 | File | Vai trò |
 |---|---|
@@ -280,7 +381,7 @@ Nếu báo cáo được viết trong notebook hoặc công cụ khác, cần xu
 | `src/eval.jl` | Hàm đánh giá correctness, performance, memory, scalability, transaction length |
 | `main.jl` | CLI chạy thuật toán từ terminal |
 
-## 8. Dataset
+## 9. Dataset
 
 Toy datasets dùng cho unit test:
 
@@ -308,7 +409,7 @@ Application dataset:
 |---|---|
 | Groceries | `data/analysis/Groceries_dataset.csv` |
 
-## 9. Thực Nghiệm Và Notebook
+## 10. Thực Nghiệm Và Notebook
 
 Các notebook chính:
 
@@ -320,7 +421,7 @@ Các notebook chính:
 
 Các kết quả trung gian và CSV được lưu trong `results/`.
 
-## 10. So Sánh Với SPMF
+## 11. So Sánh Với SPMF
 
 SPMF Java baseline được đặt tại:
 
@@ -336,7 +437,7 @@ Ví dụ chạy SPMF trực tiếp:
 
 Trong code, hàm `Utils.execute_spmf(...)` hỗ trợ gọi SPMF và parse thời gian/bộ nhớ từ output.
 
-## 11. Tái Lập Kết Quả
+## 12. Tái Lập Kết Quả
 
 Quy trình khuyến nghị:
 
@@ -357,7 +458,7 @@ julia --project=. main.jl --input data/toy/test1.txt --minsup 0.4 --output resul
 03_employ.ipynb
 ```
 
-## 12. Checklist Theo Yêu Cầu Đề
+## 13. Checklist Theo Yêu Cầu Đề
 
 | Yêu cầu | Trạng thái trong repo |
 |---|---|
@@ -374,7 +475,7 @@ julia --project=. main.jl --input data/toy/test1.txt --minsup 0.4 --output resul
 | Ứng dụng thực tế | Có, `notebooks/03_employ.ipynb` và `data/analysis/Groceries_dataset.csv` |
 | Báo cáo PDF chính thức | Cần đặt tại `docs/Report.pdf` trước khi nộp |
 
-## 13. Ghi Chú Nộp Bài
+## 14. Ghi Chú Nộp Bài
 
 - Nếu file nén vượt giới hạn dung lượng, đưa dataset lớn lên Google Drive và cập nhật link tại đây.
 - Trước khi nộp, chạy lại toàn bộ test:
