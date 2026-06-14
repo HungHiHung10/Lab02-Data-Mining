@@ -344,10 +344,6 @@ Lab02-Data-Mining/
 |   |-- Report.pdf
 ```
 
-Ghi chú trước khi nộp: đề bài yêu cầu báo cáo chính thức nằm ở `docs/Report.pdf`.
-Nếu báo cáo được viết trong notebook hoặc công cụ khác, cần xuất thành PDF và đặt vào
-đúng đường dẫn này trước khi đóng gói.
-
 ## 7. Mô Tả Mã Nguồn
 
 | File | Vai trò |
@@ -360,6 +356,14 @@ Nếu báo cáo được viết trong notebook hoặc công cụ khác, cần xu
 | `main.jl` | CLI chạy thuật toán từ terminal |
 
 ## 8. Dataset
+
+Link Google Drive chứa dữ liệu dùng cho project:
+
+```text
+https://drive.google.com/drive/folders/1IY0lJNlLrH4q1XpMMaZbM0JpcT2qUUGm?usp=sharing
+```
+
+Sau khi tải dữ liệu, đặt nguyên thư mục `data/` vào thư mục gốc của project.
 
 Toy datasets dùng cho unit test:
 
@@ -377,6 +381,7 @@ Benchmark datasets:
 |---|---|
 | Accidents | `data/benchmark/accidents.dat` |
 | Connect-4 | `data/benchmark/connect-4.dat` |
+| Mushroom | `data/benchmark/mushroom.dat` |
 | Retail | `data/benchmark/retail.dat` |
 | T10I4D100K | `data/benchmark/transactional_T10I4D100K.csv` |
 | T20I6D100K | `data/benchmark/transactional_T20I6D100K.csv` |
@@ -449,6 +454,7 @@ julia --project=. main.jl --input data/toy/test1.txt --minsup 0.4 --output resul
 | Ít nhất 5 toy datasets | Có, `data/toy/test1.txt` đến `test5.txt` |
 | Bản tối ưu | Có, `fpgrowth_opt.jl` |
 | Benchmark datasets | Có, trong `data/benchmark/` |
+| Link tải dữ liệu | Có, Google Drive được ghi trong mục Dataset |
 | So sánh SPMF | Có, qua `fpgrowth_spmf.jar`, `src/eval.jl`, notebooks và `results/` |
 | Ứng dụng thực tế | Có, `notebooks/03_employ.ipynb` và `data/analysis/Groceries_dataset.csv` |
 | Báo cáo PDF chính thức | Có, `docs/Report.pdf`|
