@@ -241,13 +241,19 @@ Ví dụ:
 Lệnh chính:
 
 ```cmd
-julia --project=. main.jl --input <input-file> --minsup <minsup> --output <output-file>
+julia --project=. main.jl --input <input-file> --minsup <minsup> --output <output-file> --algorithm <base|opt>
 ```
 
 Ví dụ với tỷ lệ minsup:
 
 ```cmd
 julia --project=. main.jl --input data/toy/test1.txt --minsup 0.4 --output results/result1.txt
+```
+
+Ví dụ chạy bản tối ưu:
+
+```cmd
+julia --project=. main.jl --input data/toy/test1.txt --minsup 0.4 --output results/result1_opt.txt --algorithm opt
 ```
 
 Ví dụ với minsup tuyệt đối:
@@ -263,6 +269,7 @@ Tham số:
 | `--input`, `-i` | Đường dẫn file giao dịch theo định dạng SPMF |
 | `--minsup`, `-s` | Ngưỡng support, dạng tỷ lệ `0 < s <= 1` hoặc số tuyệt đối `s > 1` |
 | `--output`, `-o` | Đường dẫn file kết quả |
+| `--algorithm`, `-a` | Chọn bản cài đặt: `base` hoặc `opt`; mặc định là `base` |
 
 ## 5. Chạy Kiểm Thử Tự Động
 

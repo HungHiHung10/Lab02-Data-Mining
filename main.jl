@@ -25,6 +25,11 @@ function parse_commandline()
             help = "Path to output result file"
             arg_type = String
             default = "results/output.txt"
+        "--algorithm", "-a"
+            help = "FP-Growth implementation to run: base or opt"
+            arg_type = String
+            default = "base"
+            range_tester = x -> x in ("base", "opt")
     end
 
     return parse_args(s)
@@ -37,6 +42,7 @@ function main()
     input_file = args["input"]
     minsup = args["minsup"]
     output_file = args["output"]
+    algorithm = args["algorithm"]
 
     phase(logger, "FP-GROWTH STARTING")
     
@@ -56,12 +62,14 @@ function main()
         min_sup_abs = minsup > 1.0 ? round(Int, minsup) : ceil(Int, minsup * total_txs)
         metric(logger, "Minimum support threshold applied: ", minsup, " (Absolute: ", min_sup_abs, ")")
         
-        process(logger, "Executing FP-Growth...")
+        process(logger, "Executing FP-Growth (", algorithm, ")...")
         
         # Dọn rác bộ nhớ trước khi đo
         GC.gc()
         time_before = time_ns()
-        frequent_itemsets = FPGrowth.fpgrowth(transactions, min_sup_abs)
+        frequent_itemsets = algorithm == "opt" ?
+            FPGrowth.fpgrowth_opt(transactions, min_sup_abs) :
+            FPGrowth.fpgrowth(transactions, min_sup_abs)
         time_after = time_ns()
         
         exec_time = (time_after - time_before) / 1e9
