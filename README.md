@@ -44,129 +44,17 @@ Output:
 
 Các package Julia được quản lý bằng `Project.toml` và `Manifest.toml`.
 
-## 3. Cài Đặt Bằng Windows CMD
+## 3. Cài Đặt Và Setup
 
-Các lệnh dưới đây dùng **Command Prompt (CMD)** trên Windows.
+Project yêu cầu Julia `>= 1.9` và Java để chạy SPMF baseline. Các bước dưới đây đi theo thứ tự setup từ đầu; bước nào khác nhau giữa hệ điều hành sẽ được ghi rõ.
 
-### 3.1. Cài Julia bằng Juliaup
+### 3.1. Cài Julia Bằng Juliaup
 
-Cài Juliaup:
+Windows CMD:
 
 ```cmd
 winget install julia -s msstore
 ```
-
-Đóng CMD, mở lại CMD mới rồi kiểm tra:
-
-```cmd
-julia --version
-```
-
-Nếu máy có nhiều phiên bản Julia, có thể dùng Juliaup để cài/chọn bản ổn định:
-
-```cmd
-juliaup add release
-juliaup default release
-julia --version
-```
-
-Project yêu cầu Julia `>= 1.9`. Julia mới hơn, ví dụ `1.10`, `1.11`, `1.12`, vẫn dùng được nếu package instantiate thành công.
-
-### 3.2. Mở đúng thư mục project
-
-```cmd
-cd /d D:\DataMining\Lab02-Data-Mining
-```
-
-Kiểm tra project files:
-
-```cmd
-dir Project.toml
-dir Manifest.toml
-```
-
-### 3.3. Cài dependency Julia cho project
-
-```cmd
-julia --project=. -e "using Pkg; Pkg.instantiate()"
-```
-
-Nếu muốn làm sạch trạng thái dependency hơn:
-
-```cmd
-julia --project=. -e "using Pkg; Pkg.resolve(); Pkg.instantiate(); Pkg.precompile()"
-```
-
-### 3.4. Cài Java để chạy SPMF
-
-Kiểm tra Java:
-
-```cmd
-java -version
-```
-
-Nếu chưa có Java, cài **Microsoft OpenJDK 21** để khớp với cấu hình benchmark trong notebook:
-
-```cmd
-winget install Microsoft.OpenJDK.21
-```
-
-Đóng CMD, mở lại CMD mới rồi kiểm tra đúng đường dẫn Java:
-
-```cmd
-"C:\Program Files\Microsoft\jdk-21.0.10.7-hotspot\bin\java.exe" -version
-```
-
-Trong các notebook benchmark, cấu hình Java nên dùng:
-
-```julia
-"java_path" => "C:/Program Files/Microsoft/jdk-21.0.10.7-hotspot/bin/java.exe"
-```
-
-Sau đó kiểm tra SPMF:
-
-```cmd
-cd /d D:\DataMining\Lab02-Data-Mining
-"C:\Program Files\Microsoft\jdk-21.0.10.7-hotspot\bin\java.exe" -jar src\algorithm\fpgrowth_spmf.jar
-```
-
-### 3.5. Kiểm Tra Setup Nhanh
-
-Ba lệnh quan trọng nhất:
-
-```cmd
-cd /d D:\DataMining\Lab02-Data-Mining
-julia --project=. -e "using Pkg; Pkg.instantiate()"
-julia --project=. test\runtests.jl
-```
-
-### 3.6. Cài Kernel Julia Cho Notebook
-
-`IJulia` đã có sẵn trong `Project.toml` và `Manifest.toml`, nên không cần `Pkg.add("IJulia")`.
-Sau khi instantiate project, đăng ký kernel cho Jupyter:
-
-```cmd
-cd /d D:\DataMining\Lab02-Data-Mining
-julia --project=. -e "using IJulia; installkernel(\"Julia Lab02 DataMining\", \"--project=D:/DataMining/Lab02-Data-Mining\")"
-```
-
-Mở Jupyter Notebook:
-
-```cmd
-jupyter notebook
-```
-
-Khi mở các file trong `notebooks/`, chọn kernel:
-
-```text
-Julia Lab02 DataMining
-```
-
-## 4. Cài Đặt Trên macOS/Linux
-
-Nếu chạy trên macOS hoặc Linux, vẫn dùng Juliaup để cài Julia, nhưng đường dẫn Java sẽ khác Windows.
-
-### 4.1. Cài Julia bằng Juliaup
 
 macOS/Linux:
 
@@ -174,20 +62,33 @@ macOS/Linux:
 curl -fsSL https://install.julialang.org | sh
 ```
 
-Đóng terminal, mở lại terminal mới rồi kiểm tra:
+Sau khi cài xong, đóng terminal/CMD rồi mở lại. Kiểm tra Julia:
 
 ```bash
 julia --version
 ```
 
-Nếu cần chọn bản ổn định:
+Nếu máy có nhiều phiên bản Julia, chọn bản ổn định:
 
 ```bash
 juliaup add release
 juliaup default release
+julia --version
 ```
 
-### 4.2. Cài Java
+### 3.2. Cài Java Để Chạy SPMF
+
+Windows CMD:
+
+```cmd
+winget install Microsoft.OpenJDK.21
+```
+
+Kiểm tra đúng Java path trên Windows:
+
+```cmd
+"C:\Program Files\Microsoft\jdk-21.0.10.7-hotspot\bin\java.exe" -version
+```
 
 macOS dùng Homebrew:
 
@@ -204,42 +105,120 @@ sudo apt install openjdk-21-jdk
 java -version
 ```
 
-### 4.3. Cài dependency project
+### 3.3. Mở Đúng Thư Mục Project
 
-Từ thư mục project:
+Windows CMD:
+
+```cmd
+cd /d D:\DataMining\Lab02-Data-Mining
+```
+
+macOS/Linux:
 
 ```bash
 cd /path/to/Lab02-Data-Mining
+```
+
+Kiểm tra project files:
+
+Windows CMD:
+
+```cmd
+dir Project.toml
+dir Manifest.toml
+```
+
+macOS/Linux:
+
+```bash
+ls Project.toml Manifest.toml
+```
+
+### 3.4. Cài Dependency Julia
+
+Windows CMD:
+
+```cmd
+julia --project=. -e "using Pkg; Pkg.instantiate()"
+```
+
+macOS/Linux:
+
+```bash
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
 
-Chạy test:
+Nếu muốn làm sạch trạng thái dependency hơn, chạy:
+
+```cmd
+julia --project=. -e "using Pkg; Pkg.resolve(); Pkg.instantiate(); Pkg.precompile()"
+```
+
+### 3.5. Chạy Test
+
+Windows CMD:
+
+```cmd
+julia --project=. test\runtests.jl
+```
+
+macOS/Linux:
 
 ```bash
 julia --project=. test/runtests.jl
 ```
 
-Chạy thuật toán:
+### 3.6. Kiểm Tra SPMF
 
-```bash
-julia --project=. main.jl --input data/toy/test1.txt --minsup 0.4 --output results/result1.txt
+Windows CMD:
+
+```cmd
+"C:\Program Files\Microsoft\jdk-21.0.10.7-hotspot\bin\java.exe" -jar src\algorithm\fpgrowth_spmf.jar run FPGrowth_itemsets data\toy\test1.txt results\spmf_test1.txt 0.4
 ```
 
-Chạy SPMF:
+macOS/Linux:
 
 ```bash
 java -jar src/algorithm/fpgrowth_spmf.jar run FPGrowth_itemsets data/toy/test1.txt results/spmf_test1.txt 0.4
 ```
 
-### 4.4. Lưu Ý `java_path` Trong Notebook
+### 3.7. Cài Kernel Julia Cho Notebook
 
-Trên Windows, notebook đang dùng:
+`IJulia` đã có sẵn trong `Project.toml` và `Manifest.toml`, nên không cần `Pkg.add("IJulia")`.
+
+Windows CMD:
+
+```cmd
+julia --project=. -e "using IJulia; installkernel(\"Julia Lab02 DataMining\", \"--project=%cd%\")"
+```
+
+macOS/Linux:
+
+```bash
+julia --project=. -e "using IJulia; installkernel(\"Julia Lab02 DataMining\", \"--project=$(pwd)\")"
+```
+
+Mở Jupyter Notebook:
+
+```bash
+jupyter notebook
+```
+
+Khi mở các file trong `notebooks/`, chọn kernel:
+
+```text
+Julia Lab02 DataMining
+```
+
+### 3.8. Cấu Hình `java_path` Trong Notebook Benchmark
+
+Trên Windows, notebook benchmark nên dùng:
 
 ```julia
 "java_path" => "C:/Program Files/Microsoft/jdk-21.0.10.7-hotspot/bin/java.exe"
 ```
 
-Trên macOS/Linux, đổi thành:
+Trên macOS/Linux, dùng:
 
 ```julia
 "java_path" => "java"
@@ -257,7 +236,7 @@ Ví dụ:
 "java_path" => "/usr/bin/java"
 ```
 
-## 5. Cách Chạy Thuật Toán
+## 4. Cách Chạy Thuật Toán
 
 Lệnh chính:
 
@@ -285,7 +264,7 @@ Tham số:
 | `--minsup`, `-s` | Ngưỡng support, dạng tỷ lệ `0 < s <= 1` hoặc số tuyệt đối `s > 1` |
 | `--output`, `-o` | Đường dẫn file kết quả |
 
-## 6. Chạy Kiểm Thử Tự Động
+## 5. Chạy Kiểm Thử Tự Động
 
 Lệnh chạy test:
 
@@ -311,7 +290,7 @@ Bộ test hiện có:
 - `test/test_helpers.jl`: hàm hỗ trợ chuẩn hóa itemset, brute-force reference và parse output.
 - `test/runtests.jl`: entrypoint chạy toàn bộ test.
 
-## 7. Cấu Trúc Thư Mục
+## 6. Cấu Trúc Thư Mục
 
 ```text
 Lab02-Data-Mining/
@@ -362,7 +341,7 @@ Ghi chú trước khi nộp: đề bài yêu cầu báo cáo chính thức nằm
 Nếu báo cáo được viết trong notebook hoặc công cụ khác, cần xuất thành PDF và đặt vào
 đúng đường dẫn này trước khi đóng gói.
 
-## 8. Mô Tả Mã Nguồn
+## 7. Mô Tả Mã Nguồn
 
 | File | Vai trò |
 |---|---|
@@ -373,7 +352,7 @@ Nếu báo cáo được viết trong notebook hoặc công cụ khác, cần xu
 | `src/eval.jl` | Hàm đánh giá correctness, performance, memory, scalability, transaction length |
 | `main.jl` | CLI chạy thuật toán từ terminal |
 
-## 9. Dataset
+## 8. Dataset
 
 Toy datasets dùng cho unit test:
 
@@ -401,7 +380,7 @@ Application dataset:
 |---|---|
 | Groceries | `data/analysis/Groceries_dataset.csv` |
 
-## 10. Thực Nghiệm Và Notebook
+## 9. Thực Nghiệm Và Notebook
 
 Các notebook chính:
 
@@ -413,7 +392,7 @@ Các notebook chính:
 
 Các kết quả trung gian và CSV được lưu trong `results/`.
 
-## 11. So Sánh Với SPMF
+## 10. So Sánh Với SPMF
 
 SPMF Java baseline được đặt tại:
 
@@ -429,7 +408,7 @@ Ví dụ chạy SPMF trực tiếp:
 
 Trong code, hàm `Utils.execute_spmf(...)` hỗ trợ gọi SPMF và parse thời gian/bộ nhớ từ output.
 
-## 12. Tái Lập Kết Quả
+## 11. Tái Lập Kết Quả
 
 Quy trình khuyến nghị:
 
@@ -450,7 +429,7 @@ julia --project=. main.jl --input data/toy/test1.txt --minsup 0.4 --output resul
 03_employ.ipynb
 ```
 
-## 13. Checklist Theo Yêu Cầu Đề
+## 12. Checklist Theo Yêu Cầu Đề
 
 | Yêu cầu | Trạng thái trong repo |
 |---|---|
@@ -465,16 +444,4 @@ julia --project=. main.jl --input data/toy/test1.txt --minsup 0.4 --output resul
 | Benchmark datasets | Có, trong `data/benchmark/` |
 | So sánh SPMF | Có, qua `fpgrowth_spmf.jar`, `src/eval.jl`, notebooks và `results/` |
 | Ứng dụng thực tế | Có, `notebooks/03_employ.ipynb` và `data/analysis/Groceries_dataset.csv` |
-| Báo cáo PDF chính thức | Cần đặt tại `docs/Report.pdf` trước khi nộp |
-
-## 14. Ghi Chú Nộp Bài
-
-- Nếu file nén vượt giới hạn dung lượng, đưa dataset lớn lên Google Drive và cập nhật link tại đây.
-- Trước khi nộp, chạy lại toàn bộ test:
-
-```cmd
-julia --project=. test/runtests.jl
-```
-
-- Restart & Run All các notebook trước khi xuất báo cáo hoặc nộp notebook.
-- Đảm bảo `docs/Report.pdf` tồn tại nếu nộp theo đúng cấu trúc đề bài.
+| Báo cáo PDF chính thức | Có, `docs/Report.pdf`|
