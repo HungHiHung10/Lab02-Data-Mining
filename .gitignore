@@ -40,7 +40,6 @@ LocalPreferences.toml
 # Project Specific 
 # ==================================
 data/benchmark/*
-results/*
 .cursorrules
 docs/CSC14004 - Data Mining - P2 - Updated.txt
 tks.ipynb
