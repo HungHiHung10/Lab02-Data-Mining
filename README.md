@@ -140,6 +140,28 @@ julia --project=. -e "using Pkg; Pkg.instantiate()"
 julia --project=. test\runtests.jl
 ```
 
+### 3.6. Cài Kernel Julia Cho Notebook
+
+`IJulia` đã có sẵn trong `Project.toml` và `Manifest.toml`, nên không cần `Pkg.add("IJulia")`.
+Sau khi instantiate project, đăng ký kernel cho Jupyter:
+
+```cmd
+cd /d D:\DataMining\Lab02-Data-Mining
+julia --project=. -e "using IJulia; installkernel(\"Julia Lab02 DataMining\", \"--project=D:/DataMining/Lab02-Data-Mining\")"
+```
+
+Mở Jupyter Notebook:
+
+```cmd
+jupyter notebook
+```
+
+Khi mở các file trong `notebooks/`, chọn kernel:
+
+```text
+Julia Lab02 DataMining
+```
+
 ## 4. Cách Chạy Thuật Toán
 
 Lệnh chính:
