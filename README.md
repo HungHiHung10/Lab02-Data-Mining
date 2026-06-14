@@ -1,124 +1,308 @@
-# Frequent Pattern Mining - FP-Growth Algorithm 
+# Frequent Itemset Mining - FP-Growth
 
-![Julia](https://img.shields.io/badge/Julia-1.9-blue?logo=julia) 
-![IJulia](https://img.shields.io/badge/IJulia-0.7+-success) 
-![SPMF](https://img.shields.io/badge/SPMF-Java-orange) 
-![Java](https://img.shields.io/badge/Java-8%2B-red?logo=java)
+Đồ án 2 môn **Khai thác dữ liệu và ứng dụng - CSC14004**.
 
-Đồ án: Khai thác tập phổ biến (Frequent Itemset Mining) - Cài đặt thuật toán FP-Growth bằng ngôn ngữ **Julia** và so sánh & đánh giá đối với thư viện Built-in **SPMF (Java)** trên đa dạng dataset/database.
+Dự án cài đặt thuật toán **FP-Growth** bằng **Julia** để khai thác tập phổ biến
+(Frequent Itemset Mining), hỗ trợ đọc/ghi dữ liệu theo định dạng SPMF, kiểm thử
+tự động, và so sánh thực nghiệm với bản tham chiếu **SPMF Java**.
 
----
+![Julia](https://img.shields.io/badge/Julia-1.9+-blue?logo=julia)
+![SPMF](https://img.shields.io/badge/SPMF-Java-orange)
+![Tests](https://img.shields.io/badge/tests-passing-success)
 
-## 1. Hướng dẫn Cài đặt Môi trường & Gói phụ thuộc
+## 1. Mục Tiêu
 
-### Danh sách Julia dependencies
-| Packets | Version | Description |
-|------|-------------------|-------|
-| `Julia` | 1.9+ | Main language |
-| `IJulia` | 0.7+ | Jupyter Kernel |
-| `CSV` | 0.10+ | Read/Write CSV files |
-| `DataFrames` | 1.6+ | Data processing |
-| `Plots` | 1.30+ | Plotting |
-| `ProgressMeter` | 1.8+ | Progress bar |
-| `Statistics` (standard) | – | Basic statistics |
-| `BenchmarkTools` (optional) | 1.3+ | Performance measurement |
+- Cài đặt FP-Growth từ đầu bằng Julia, không dùng thư viện FIM có sẵn.
+- Xuất toàn bộ frequent itemsets kèm support tương ứng.
+- Hỗ trợ input/output theo định dạng SPMF:
 
-> **Notice:** `Project.toml` và `Manifest.toml` của dự án đã thực hiện theo chính xác các phiên bản; chạy `instantiate` sẽ tự động cài đặt các packages.
+```text
+1 2 5
+2 4
+1 2 3
+```
 
-### Bước 1: Cài đặt Julia (ngôn ngữ chính)
-1. Truy cập https://julialang.org/downloads/ và tải bản phù hợp với hệ điều hành (Windows/macOS/Linux).
-2. **Windows:** Đánh dấu *Add Julia to PATH* trong quá trình cài đặt, hoặc sau cài đặt thêm thủ công:
-   ```powershell
-   [Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\\Users\\%USERNAME%\\AppData\\Local\\Programs\\Julia-1.x\\bin", "User")
-   ```
-3. **macOS / Linux:** Bạn có thể dùng Homebrew hoặc apt:
-   ```bash
-   # macOS
-   brew install julia
-   # Ubuntu
-   sudo apt update && sudo apt install julia
-   ```
-4. Kiểm tra:
-   ```bash
-   julia --version
-   ```
-   Kết quả phải >= `1.9`.
+Output:
 
-### Bước 2: Cài đặt Jupyter Notebook và IJulia
-1. Nếu chưa có Python, cài Miniconda hoặc Python 3.x.
-2. Cài Jupyter:
-   ```bash
-   pip install notebook   # hoặc conda install -c conda-forge notebook
-   ```
-3. Mở Julia REPL (`julia`).
-4. Vào Package Manager (`]`).
-5. Kích hoạt môi trường dự án và cài các gói:
-   ```julia
-   activate .          # đọc Project.toml
-   instantiate         # tải các gói, bao gồm IJulia, CSV, DataFrames, Plots, ProgressMeter
-   ```
-6. Đăng ký kernel Jupyter (chỉ chạy một lần):
-   ```julia
-   using IJulia
-   installkernel("Julia")
-   ```
-7. Kiểm tra: Mở terminal, chạy `jupyter notebook`, tạo notebook mới, chọn kernel **Julia**, thử:
-   ```julia
-   using Plots
-   plot([1,2,3])
-   ```
-   Nếu biểu đồ hiện ra → mọi thứ đã sẵn sàng.
+```text
+1 2 #SUP: 3
+2 5 #SUP: 4
+```
 
-### Bước 3: Cài đặt Java
-* **Windows**: https://adoptium.net/ → tải *Windows x64 Installer* → chọn *Add to PATH* → kiểm tra `java -version` và `javac -version`.
-* **macOS**: `brew install openjdk@11` → thêm vào `~/.zshrc`:
-  ```bash
-  export JAVA_HOME="$(/usr/libexec/java_home -v 11)"
-  export PATH=$JAVA_HOME/bin:$PATH
-  ```
-* **Linux (Ubuntu/Debian)**: `sudo apt install openjdk-11-jdk`.
-* Thư viện `fpgrowth_spmf.jar` đã được đặt sẵn trong thư mục `src/algorithm/`.
-* Kiểm tra tích hợp:
-  ```bash
-  java -jar src/algorithm/fpgrowth_spmf.jar
-  ```
-  Nếu xuất hiện phiên bản SPMF → chuẩn bị xong.
+- Có bản cài đặt cơ bản và bản tối ưu.
+- Có unit test tự động trên ít nhất 5 cơ sở dữ liệu nhỏ.
+- Có notebook/script phục vụ đánh giá correctness, runtime, memory, scalability và ứng dụng thực tế.
 
-## 2. Cấu trúc Thư mục Chi tiết
+## 2. Yêu Cầu Môi Trường
 
-Dự án được tổ chức chặt chẽ theo mô hình module của phần mềm chuyên nghiệp:
+| Thành phần | Phiên bản | Vai trò |
+|---|---:|---|
+| Julia | >= 1.9 | Ngôn ngữ cài đặt chính |
+| Java | >= 8 | Chạy SPMF Java baseline |
+| Jupyter Notebook | tùy chọn | Chạy notebook thực nghiệm |
+| IJulia | theo `Project.toml` | Julia kernel cho notebook |
+
+Các package Julia được quản lý bằng `Project.toml` và `Manifest.toml`.
+
+## 3. Cài Đặt
+
+Kích hoạt project và cài dependency:
+
+```powershell
+julia --project=.
+```
+
+Trong Julia REPL:
+
+```julia
+using Pkg
+Pkg.instantiate()
+```
+
+Hoặc chạy trực tiếp:
+
+```powershell
+julia --project=. -e "using Pkg; Pkg.instantiate()"
+```
+
+Kiểm tra Julia:
+
+```powershell
+julia --version
+```
+
+Kiểm tra Java/SPMF:
+
+```powershell
+java -jar src/algorithm/fpgrowth_spmf.jar
+```
+
+## 4. Cách Chạy Thuật Toán
+
+Lệnh chính:
+
+```powershell
+julia --project=. main.jl --input <input-file> --minsup <minsup> --output <output-file>
+```
+
+Ví dụ với tỷ lệ minsup:
+
+```powershell
+julia --project=. main.jl --input data/toy/test1.txt --minsup 0.4 --output results/result1.txt
+```
+
+Ví dụ với minsup tuyệt đối:
+
+```powershell
+julia --project=. main.jl --input data/toy/test1.txt --minsup 3 --output results/result1_abs.txt
+```
+
+Tham số:
+
+| Tham số | Ý nghĩa |
+|---|---|
+| `--input`, `-i` | Đường dẫn file giao dịch theo định dạng SPMF |
+| `--minsup`, `-s` | Ngưỡng support, dạng tỷ lệ `0 < s <= 1` hoặc số tuyệt đối `s > 1` |
+| `--output`, `-o` | Đường dẫn file kết quả |
+
+## 5. Chạy Kiểm Thử Tự Động
+
+Lệnh theo yêu cầu đề bài:
+
+```powershell
+julia --project test/runtests.jl
+```
+
+Lệnh tương đương, chỉ rõ project root:
+
+```powershell
+julia --project=. test/runtests.jl
+```
+
+Output lần chạy cuối:
+
+```text
+Test Summary:                         | Pass  Total  Time
+FP-Growth correctness on toy datasets |   11     11  2.6s
+Test Summary:                                    | Pass  Total  Time
+SPMF reader accepts comma-separated transactions |    1      1  0.1s
+Test Summary:         | Pass  Total  Time
+Benchmark smoke tests |   23     23  0.4s
+```
+
+Bộ test hiện có:
+
+- `test/test_correctness.jl`: kiểm tra `fpgrowth` và `fpgrowth_opt` trên 5 toy datasets bằng brute-force oracle.
+- `test/test_benchmark.jl`: smoke test cho pipeline benchmark nhẹ, output SPMF-style và tính nhất quán giữa base/optimized.
+- `test/test_helpers.jl`: hàm hỗ trợ chuẩn hóa itemset, brute-force reference và parse output.
+- `test/runtests.jl`: entrypoint chạy toàn bộ test.
+
+## 6. Cấu Trúc Thư Mục
 
 ```text
 Lab02-Data-Mining/
-│
-├── data/                       # Chứa các tập dữ liệu đầu vào.
-│   ├── benchmark/              # Các dataset lớn để đo hiệu năng (chess.dat, mushroom.dat,...)
-│   └── toy/                    # Các dataset nhỏ gọn dùng để debug và test độ chính xác.
-│
-├── docs/                       # Chứa tài liệu tham khảo, báo cáo, PDF mô tả thuật toán.
-│
-├── notebooks/                  # Chứa các file Jupyter Notebook dùng để chạy kịch bản (Pipeline).
-│   ├── 01_evaluate.ipynb       # File orchestrator chính: Đánh giá Tính đúng đắn, Hiệu năng và Độ mở rộng.
-│   ├── 02_bechmarking.ipynb    # (Mở rộng) Các kịch bản test chuyên sâu.
-│   └── 03_employ.ipynb         # (Mở rộng) Ứng dụng thuật toán vào bài toán thực tế.
-│
-├── results/                    # Thư mục lưu trữ kết quả đầu ra sinh ra trong quá trình chạy.
-│   └── (Sẽ chứa file kết quả .txt, file báo cáo .csv và các biểu đồ lưu lại)
-│
-├── src/                        # Chứa 100% Mã nguồn (Source Code) của dự án.
-│   ├── algorithm/
-│   │   ├── fpgrowth_base.jl    # Thuật toán FP-Growth cơ bản (Baseline).
-│   │   ├── fpgrowth_opt.jl     # Thuật toán FP-Growth tối ưu hóa (Optimized).
-│   │   └── fpgrowth_spmf.jar   # Bản SPMF Java chính thức dùng để đối chuẩn hiệu năng.
-│   ├── eval.jl                 # Kịch bản thực nghiệm, so sánh độ chính xác và vẽ biểu đồ.
-│   ├── logger.jl               # Module OOP tự viết: In log màu sắc chuyên nghiệp.
-│   ├── structures.jl           # Cấu trúc dữ liệu: FPNode và HeaderTable.
-│   ├── utils.jl                # Tiện ích: Đọc/ghi dữ liệu chuẩn SPMF và hỗ trợ gọi JVM.
-│   └── FPGrowth.jl             # Module chính đóng gói toàn bộ code thuật toán.
-│
-├── .cursorrules                # File cấu hình quy tắc dành riêng cho AI.
-├── .gitignore                  # Chỉ định các tệp/thư mục Git bỏ qua.
-├── Manifest.toml               # Ghi chính xác các gói dependencies để tái lập.
-├── Project.toml                # File quản lý môi trường và thư viện liên kết.
-└── README.md                   # Tệp hướng dẫn này.
+|-- README.md
+|-- Project.toml
+|-- Manifest.toml
+|-- main.jl
+|-- src/
+|   |-- FPGrowth.jl
+|   |-- structures.jl
+|   |-- utils.jl
+|   |-- logger.jl
+|   |-- eval.jl
+|   |-- algorithm/
+|   |   |-- fpgrowth_base.jl
+|   |   |-- fpgrowth_opt.jl
+|   |   |-- fpgrowth_spmf.jar
+|-- test/
+|   |-- runtests.jl
+|   |-- test_correctness.jl
+|   |-- test_benchmark.jl
+|   |-- test_helpers.jl
+|-- data/
+|   |-- toy/
+|   |   |-- test1.txt
+|   |   |-- test2.txt
+|   |   |-- test3.txt
+|   |   |-- test4.txt
+|   |   |-- test5.txt
+|   |-- benchmark/
+|   |   |-- accidents.dat
+|   |   |-- connect-4.dat
+|   |   |-- retail.dat
+|   |   |-- transactional_T10I4D100K.csv
+|   |   |-- transactional_T20I6D100K.csv
+|   |-- analysis/
+|   |   |-- Groceries_dataset.csv
+|-- notebooks/
+|   |-- 01_evaluate.ipynb
+|   |-- 02_bechmarking.ipynb
+|   |-- 03_employ.ipynb
+|-- results/
+|-- docs/
+|   |-- Requirement.pdf
+|   |-- Requirement.txt
+|   |-- References.pdf
 ```
+
+Ghi chú trước khi nộp: đề bài yêu cầu báo cáo chính thức nằm ở `docs/Report.pdf`.
+Nếu báo cáo được viết trong notebook hoặc công cụ khác, cần xuất thành PDF và đặt vào
+đúng đường dẫn này trước khi đóng gói.
+
+## 7. Mô Tả Mã Nguồn
+
+| File | Vai trò |
+|---|---|
+| `src/algorithm/fpgrowth_base.jl` | Bản FP-Growth cơ bản |
+| `src/algorithm/fpgrowth_opt.jl` | Bản tối ưu với single-path pruning, bit filter và giảm cấp phát trung gian |
+| `src/structures.jl` | Cấu trúc `FPNode`, `HeaderTable`, `HeaderTableEntry` |
+| `src/utils.jl` | Đọc/ghi SPMF, parse output, gọi SPMF Java, sinh dữ liệu tổng hợp |
+| `src/eval.jl` | Hàm đánh giá correctness, performance, memory, scalability, transaction length |
+| `main.jl` | CLI chạy thuật toán từ terminal |
+
+## 8. Dataset
+
+Toy datasets dùng cho unit test:
+
+| Dataset | Mục đích |
+|---|---|
+| `data/toy/test1.txt` | Kiểm thử cơ bản với nhiều frequent itemsets |
+| `data/toy/test2.txt` | Trường hợp gần single path |
+| `data/toy/test3.txt` | Dataset nhỏ để kiểm tra support |
+| `data/toy/test4.txt` | Dataset có giao dịch giao nhau |
+| `data/toy/test5.txt` | Dataset sparse nhỏ |
+
+Benchmark datasets:
+
+| Dataset | File |
+|---|---|
+| Accidents | `data/benchmark/accidents.dat` |
+| Connect-4 | `data/benchmark/connect-4.dat` |
+| Retail | `data/benchmark/retail.dat` |
+| T10I4D100K | `data/benchmark/transactional_T10I4D100K.csv` |
+| T20I6D100K | `data/benchmark/transactional_T20I6D100K.csv` |
+
+Application dataset:
+
+| Dataset | File |
+|---|---|
+| Groceries | `data/analysis/Groceries_dataset.csv` |
+
+## 9. Thực Nghiệm Và Notebook
+
+Các notebook chính:
+
+| Notebook | Nội dung |
+|---|---|
+| `notebooks/01_evaluate.ipynb` | Kiểm tra correctness, chạy toy datasets, đối chiếu SPMF |
+| `notebooks/02_bechmarking.ipynb` | Benchmark thời gian, bộ nhớ, số frequent itemsets, scalability |
+| `notebooks/03_employ.ipynb` | Ứng dụng thực tế với dữ liệu Groceries/market basket |
+
+Các kết quả trung gian và CSV được lưu trong `results/`.
+
+## 10. So Sánh Với SPMF
+
+SPMF Java baseline được đặt tại:
+
+```text
+src/algorithm/fpgrowth_spmf.jar
+```
+
+Ví dụ chạy SPMF trực tiếp:
+
+```powershell
+java -jar src/algorithm/fpgrowth_spmf.jar run FPGrowth_itemsets data/toy/test1.txt results/spmf_test1.txt 0.4
+```
+
+Trong code, hàm `Utils.execute_spmf(...)` hỗ trợ gọi SPMF và parse thời gian/bộ nhớ từ output.
+
+## 11. Tái Lập Kết Quả
+
+Quy trình khuyến nghị:
+
+1. Cài Julia và Java.
+2. Chạy `julia --project=. -e "using Pkg; Pkg.instantiate()"`.
+3. Chạy `julia --project test/runtests.jl`.
+4. Chạy ví dụ CLI:
+
+```powershell
+julia --project=. main.jl --input data/toy/test1.txt --minsup 0.4 --output results/result1.txt
+```
+
+5. Mở các notebook trong `notebooks/` và chạy lại theo thứ tự:
+
+```text
+01_evaluate.ipynb
+02_bechmarking.ipynb
+03_employ.ipynb
+```
+
+## 12. Checklist Theo Yêu Cầu Đề
+
+| Yêu cầu | Trạng thái trong repo |
+|---|---|
+| Julia >= 1.9 | Có, khai báo trong `Project.toml` |
+| Không dùng thư viện FIM có sẵn | Có, thuật toán tự cài đặt trong `src/algorithm/` |
+| Đọc input SPMF | Có, `FPGrowth.read_spmf` |
+| Ghi output SPMF | Có, `FPGrowth.write_spmf` |
+| CLI nhận input/minsup/output | Có, `main.jl` |
+| Unit test tự động | Có, `test/runtests.jl` |
+| Ít nhất 5 toy datasets | Có, `data/toy/test1.txt` đến `test5.txt` |
+| Bản tối ưu | Có, `fpgrowth_opt.jl` |
+| Benchmark datasets | Có, trong `data/benchmark/` |
+| So sánh SPMF | Có, qua `fpgrowth_spmf.jar`, `src/eval.jl`, notebooks và `results/` |
+| Ứng dụng thực tế | Có, `notebooks/03_employ.ipynb` và `data/analysis/Groceries_dataset.csv` |
+| Báo cáo PDF chính thức | Cần đặt tại `docs/Report.pdf` trước khi nộp |
+
+## 13. Ghi Chú Nộp Bài
+
+- Nếu file nén vượt giới hạn dung lượng, đưa dataset lớn lên Google Drive và cập nhật link tại đây.
+- Trước khi nộp, chạy lại toàn bộ test:
+
+```powershell
+julia --project test/runtests.jl
+```
+
+- Restart & Run All các notebook trước khi xuất báo cáo hoặc nộp notebook.
+- Đảm bảo `docs/Report.pdf` tồn tại nếu nộp theo đúng cấu trúc đề bài.
