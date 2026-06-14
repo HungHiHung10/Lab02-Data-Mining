@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "bbd14113f01fc189a44be0d34b040264e4f28214"
+project_hash = "b3fddcf683f3e198b40e52db96ca7299d935f195"
 
 [[deps.AliasTables]]
 deps = ["PtrArrays", "Random"]
@@ -213,7 +213,7 @@ uuid = "b22a6f82-2f65-5046-a5b2-351ab43fb4e5"
 version = "8.1.0+0"
 
 [[deps.FPGrowth]]
-deps = ["ArgParse", "CSV", "DataFrames", "DataStructures", "Plots", "ProgressMeter", "ZipFile"]
+deps = ["ArgParse", "CSV", "DataFrames", "DataStructures", "IJulia", "Plots", "ProgressMeter", "Random", "Statistics", "ZipFile"]
 path = "."
 uuid = "12345678-1234-1234-1234-123456789012"
 version = "0.1.0"
