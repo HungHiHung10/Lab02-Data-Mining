@@ -7,15 +7,24 @@
     for file_name in toy_files
         path = joinpath(toy_dir, file_name)
         transactions = FPGrowth.read_spmf(path)
-        min_support = ceil(Int, 0.4 * length(transactions))
+        minsup_ratio = 0.4
+        min_support = ceil(Int, minsup_ratio * length(transactions))
 
-        expected = brute_force_frequent_itemsets(transactions, min_support)
+        brute_force_result = brute_force_frequent_itemsets(transactions, min_support)
         base_result = FPGrowth.fpgrowth(transactions, min_support)
         opt_result = FPGrowth.fpgrowth_opt(transactions, min_support)
+        spmf_output_path = joinpath(@__DIR__, "..", "results", "_test_spmf_$(file_name)")
 
         @testset "$file_name" begin
-            @test canonical(base_result) == canonical(expected)
-            @test canonical(opt_result) == canonical(expected)
+            try
+                spmf_result = spmf_reference(path, spmf_output_path, minsup_ratio)
+
+                @test canonical(base_result) == spmf_result
+                @test canonical(opt_result) == spmf_result
+                @test canonical(brute_force_result) == spmf_result
+            finally
+                rm(spmf_output_path, force=true)
+            end
         end
     end
 end

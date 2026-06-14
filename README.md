@@ -303,7 +303,7 @@ Output lần chạy cuối:
 
 ```text
 Test Summary:                         | Pass  Total  Time
-FP-Growth correctness on toy datasets |   11     11  2.6s
+FP-Growth correctness on toy datasets |   81     81  5.0s
 Test Summary:                                    | Pass  Total  Time
 SPMF reader accepts comma-separated transactions |    1      1  0.1s
 Test Summary:         | Pass  Total  Time
@@ -312,7 +312,7 @@ Benchmark smoke tests |   23     23  0.4s
 
 Bộ test hiện có:
 
-- `test/test_correctness.jl`: kiểm tra `fpgrowth` và `fpgrowth_opt` trên 5 toy datasets bằng brute-force oracle.
+- `test/test_correctness.jl`: kiểm tra `fpgrowth` và `fpgrowth_opt` trên 5 toy datasets bằng cách đối chiếu trực tiếp với SPMF; brute-force oracle được dùng như lớp kiểm tra phụ.
 - `test/test_benchmark.jl`: smoke test cho pipeline benchmark nhẹ, output SPMF-style và tính nhất quán giữa base/optimized.
 - `test/test_helpers.jl`: hàm hỗ trợ chuẩn hóa itemset, brute-force reference và parse output.
 - `test/runtests.jl`: entrypoint chạy toàn bộ test.
