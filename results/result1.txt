@@ -1,0 +1,19 @@
+1 #SUP: 4
+2 #SUP: 6
+3 #SUP: 4
+4 #SUP: 4
+5 #SUP: 5
+1 2 #SUP: 4
+1 4 #SUP: 3
+1 5 #SUP: 4
+2 3 #SUP: 4
+2 4 #SUP: 4
+2 5 #SUP: 5
+3 5 #SUP: 3
+4 5 #SUP: 3
+1 2 4 #SUP: 3
+1 2 5 #SUP: 4
+1 4 5 #SUP: 3
+2 3 5 #SUP: 3
+2 4 5 #SUP: 3
+1 2 4 5 #SUP: 3
